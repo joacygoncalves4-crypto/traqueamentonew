@@ -7,8 +7,6 @@ const corsHeaders = {
 
 interface EvolutionRequest {
   action: "create" | "connect" | "status" | "groups" | "webhook" | "delete" | "disconnect";
-  api_url: string;
-  api_key: string;
   instance_name: string;
   webhook_url?: string;
 }
@@ -24,8 +22,22 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Get Evolution API credentials from environment
+    const api_url = Deno.env.get("EVOLUTION_API_URL");
+    const api_key = Deno.env.get("EVOLUTION_API_KEY");
+
+    if (!api_url || !api_key) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Evolution API não configurada. Configure EVOLUTION_API_URL e EVOLUTION_API_KEY.",
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const body: EvolutionRequest = await req.json();
-    const { action, api_url, api_key, instance_name, webhook_url } = body;
+    const { action, instance_name, webhook_url } = body;
 
     // Remove trailing slash from api_url
     const baseUrl = api_url.replace(/\/$/, "");
