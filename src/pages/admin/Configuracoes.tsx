@@ -147,9 +147,15 @@ const Configuracoes = () => {
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                Na Evolution API, configure o webhook para o evento <strong>GROUP_PARTICIPANT.ADD</strong>
+                Na Evolution API, configure o webhook para o evento <strong>GROUP_PARTICIPANTS_UPDATE</strong>.
+                O sistema filtra automaticamente apenas entradas (action: add).
               </AlertDescription>
             </Alert>
+            <div className="text-sm text-muted-foreground space-y-1">
+              <p><strong>Como obter o JID do grupo:</strong></p>
+              <p>1. Via API: <code className="bg-muted px-1 rounded">GET /group/fetchAllGroups/{"{instance}"}</code></p>
+              <p>2. Via logs: Quando o primeiro lead entrar, o JID aparecerá nos logs do webhook</p>
+            </div>
           </CardContent>
         </Card>
 
@@ -216,7 +222,7 @@ const Configuracoes = () => {
               <h4 className="font-semibold">1. Configure a Evolution API</h4>
               <p className="text-sm text-muted-foreground">
                 No painel da Evolution API, adicione um webhook apontando para a URL acima.
-                Configure para o evento GROUP_PARTICIPANT.ADD.
+                Configure para o evento <strong>GROUP_PARTICIPANTS_UPDATE</strong>.
               </p>
             </div>
             <div className="space-y-2">

@@ -24,6 +24,7 @@ export type Database = {
           link_grupo: string
           nome: string
           updated_at: string | null
+          whatsapp_group_jid: string | null
         }
         Insert: {
           ativo?: boolean | null
@@ -34,6 +35,7 @@ export type Database = {
           link_grupo: string
           nome: string
           updated_at?: string | null
+          whatsapp_group_jid?: string | null
         }
         Update: {
           ativo?: boolean | null
@@ -44,6 +46,7 @@ export type Database = {
           link_grupo?: string
           nome?: string
           updated_at?: string | null
+          whatsapp_group_jid?: string | null
         }
         Relationships: []
       }
