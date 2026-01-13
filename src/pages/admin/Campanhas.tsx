@@ -19,6 +19,7 @@ interface Campanha {
   descricao: string | null;
   link_grupo: string;
   grupo_id: string;
+  whatsapp_group_jid: string | null;
   ativo: boolean;
   created_at: string;
 }
@@ -33,6 +34,7 @@ const Campanhas = () => {
     descricao: "",
     link_grupo: "",
     grupo_id: "",
+    whatsapp_group_jid: "",
   });
 
   useEffect(() => {
@@ -63,6 +65,7 @@ const Campanhas = () => {
       descricao: formData.descricao || null,
       link_grupo: formData.link_grupo,
       grupo_id: formData.grupo_id,
+      whatsapp_group_jid: formData.whatsapp_group_jid || null,
     });
 
     if (error) {
@@ -71,7 +74,7 @@ const Campanhas = () => {
     } else {
       toast.success("Campanha criada com sucesso!");
       setDialogOpen(false);
-      setFormData({ nome: "", descricao: "", link_grupo: "", grupo_id: "" });
+      setFormData({ nome: "", descricao: "", link_grupo: "", grupo_id: "", whatsapp_group_jid: "" });
       fetchCampanhas();
     }
     setSaving(false);
@@ -187,6 +190,20 @@ const Campanhas = () => {
                   />
                 </div>
                 <div className="space-y-2">
+                  <Label htmlFor="whatsapp_group_jid">JID do Grupo WhatsApp</Label>
+                  <Input
+                    id="whatsapp_group_jid"
+                    value={formData.whatsapp_group_jid}
+                    onChange={(e) =>
+                      setFormData({ ...formData, whatsapp_group_jid: e.target.value })
+                    }
+                    placeholder="Ex: 120363123456789012@g.us"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Obtenha via API: GET /group/fetchAllGroups/{"{instance}"} ou veja nos logs do webhook
+                  </p>
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="descricao">Descrição (opcional)</Label>
                   <Textarea
                     id="descricao"
@@ -234,6 +251,7 @@ const Campanhas = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nome</TableHead>
+                    <TableHead>JID do Grupo</TableHead>
                     <TableHead>Link para Anúncios</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
@@ -244,6 +262,17 @@ const Campanhas = () => {
                     <TableRow key={campanha.id}>
                       <TableCell className="font-medium">
                         {campanha.nome}
+                      </TableCell>
+                      <TableCell>
+                        {campanha.whatsapp_group_jid ? (
+                          <code className="text-xs bg-muted px-2 py-1 rounded">
+                            {campanha.whatsapp_group_jid.length > 20 
+                              ? `${campanha.whatsapp_group_jid.slice(0, 20)}...` 
+                              : campanha.whatsapp_group_jid}
+                          </code>
+                        ) : (
+                          <span className="text-xs text-amber-600">Não configurado</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <code className="text-xs bg-muted px-2 py-1 rounded">
