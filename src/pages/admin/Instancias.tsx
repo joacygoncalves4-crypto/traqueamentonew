@@ -8,7 +8,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Table,
@@ -31,7 +30,6 @@ import {
   Users,
   Wifi,
   WifiOff,
-  X,
 } from "lucide-react";
 
 interface Instancia {
@@ -57,17 +55,14 @@ const Instancias = () => {
   const { toast } = useToast();
   const [instancias, setInstancias] = useState<Instancia[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
   const [gruposDialogOpen, setGruposDialogOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState<string | null>(null);
   
-  // Form state
+  // New connection dialog
+  const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [nome, setNome] = useState("");
-  const [apiUrl, setApiUrl] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [instanceName, setInstanceName] = useState("");
   
   // QR Code state
   const [qrCode, setQrCode] = useState<string | null>(null);
@@ -132,32 +127,27 @@ const Instancias = () => {
       .replace(/^-|-$/g, "");
   };
 
-  const handleNomeChange = (value: string) => {
-    setNome(value);
-    if (!instanceName || instanceName === generateInstanceName(nome)) {
-      setInstanceName(generateInstanceName(value));
-    }
-  };
-
-  const createInstancia = async () => {
-    if (!nome || !apiUrl || !apiKey || !instanceName) {
+  const connectNewNumber = async () => {
+    if (!nome.trim()) {
       toast({
         title: "Erro",
-        description: "Preencha todos os campos",
+        description: "Digite um nome para identificar este número",
         variant: "destructive",
       });
       return;
     }
 
-    setCreating(true);
+    setConnecting(true);
+    const instanceName = generateInstanceName(nome) + "-" + Date.now();
+
     try {
       // Salvar no banco primeiro
       const { data: newInstancia, error: dbError } = await supabase
         .from("evolution_instancias")
         .insert({
           nome,
-          api_url: apiUrl,
-          api_key: apiKey,
+          api_url: "from_env",
+          api_key: "from_env",
           instance_name: instanceName,
           status: "disconnected",
         })
@@ -170,8 +160,6 @@ const Instancias = () => {
       const { data, error } = await supabase.functions.invoke("evolution-api", {
         body: {
           action: "create",
-          api_url: apiUrl,
-          api_key: apiKey,
           instance_name: instanceName,
         },
       });
@@ -179,6 +167,8 @@ const Instancias = () => {
       if (error) throw error;
 
       if (!data.success) {
+        // Se falhou, deletar do banco
+        await supabase.from("evolution_instancias").delete().eq("id", newInstancia.id);
         throw new Error(data.error || "Erro ao criar instância na Evolution");
       }
 
@@ -187,14 +177,12 @@ const Instancias = () => {
       await supabase.functions.invoke("evolution-api", {
         body: {
           action: "webhook",
-          api_url: apiUrl,
-          api_key: apiKey,
           instance_name: instanceName,
           webhook_url: webhookUrl,
         },
       });
 
-      setDialogOpen(false);
+      setNewDialogOpen(false);
       setCurrentInstancia(newInstancia);
       setQrDialogOpen(true);
       
@@ -206,25 +194,20 @@ const Instancias = () => {
 
       toast({
         title: "Sucesso",
-        description: "Instância criada! Escaneie o QR Code para conectar.",
+        description: "Escaneie o QR Code para conectar!",
       });
 
-      // Limpar formulário
       setNome("");
-      setApiUrl("");
-      setApiKey("");
-      setInstanceName("");
-      
       fetchInstancias();
     } catch (error: any) {
-      console.error("Erro ao criar instância:", error);
+      console.error("Erro ao conectar número:", error);
       toast({
         title: "Erro",
-        description: error.message || "Não foi possível criar a instância",
+        description: error.message || "Não foi possível conectar",
         variant: "destructive",
       });
     } finally {
-      setCreating(false);
+      setConnecting(false);
     }
   };
 
@@ -234,8 +217,6 @@ const Instancias = () => {
       const { data, error } = await supabase.functions.invoke("evolution-api", {
         body: {
           action: "connect",
-          api_url: instancia.api_url,
-          api_key: instancia.api_key,
           instance_name: instancia.instance_name,
         },
       });
@@ -246,7 +227,6 @@ const Instancias = () => {
       if (qrBase64) {
         setQrCode(qrBase64);
       } else if (data.data?.instance?.state === "open") {
-        // Já está conectado
         handleConnected(instancia);
       }
     } catch (error: any) {
@@ -266,8 +246,6 @@ const Instancias = () => {
       const { data, error } = await supabase.functions.invoke("evolution-api", {
         body: {
           action: "status",
-          api_url: instancia.api_url,
-          api_key: instancia.api_key,
           instance_name: instancia.instance_name,
         },
       });
@@ -287,13 +265,11 @@ const Instancias = () => {
   };
 
   const handleConnected = async (instancia: Instancia, phoneNumber?: string) => {
-    // Parar polling
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
 
-    // Atualizar no banco
     await supabase
       .from("evolution_instancias")
       .update({
@@ -345,8 +321,6 @@ const Instancias = () => {
       const { data, error } = await supabase.functions.invoke("evolution-api", {
         body: {
           action: "groups",
-          api_url: instancia.api_url,
-          api_key: instancia.api_key,
           instance_name: instancia.instance_name,
         },
       });
@@ -357,13 +331,11 @@ const Instancias = () => {
         throw new Error("Formato de resposta inválido");
       }
 
-      // Limpar grupos antigos
       await supabase
         .from("evolution_grupos")
         .delete()
         .eq("instancia_id", instancia.id);
 
-      // Inserir novos grupos
       const gruposToInsert = data.data.map((group: any) => ({
         instancia_id: instancia.id,
         group_jid: group.id,
@@ -424,22 +396,18 @@ const Instancias = () => {
   };
 
   const deleteInstancia = async (instancia: Instancia) => {
-    if (!confirm(`Tem certeza que deseja excluir a instância "${instancia.nome}"?`)) {
+    if (!confirm(`Tem certeza que deseja excluir "${instancia.nome}"?`)) {
       return;
     }
 
     try {
-      // Tentar deletar na Evolution API
       await supabase.functions.invoke("evolution-api", {
         body: {
           action: "delete",
-          api_url: instancia.api_url,
-          api_key: instancia.api_key,
           instance_name: instancia.instance_name,
         },
       });
 
-      // Deletar do banco
       const { error } = await supabase
         .from("evolution_instancias")
         .delete()
@@ -449,15 +417,15 @@ const Instancias = () => {
 
       toast({
         title: "Sucesso",
-        description: "Instância excluída!",
+        description: "Número excluído!",
       });
 
       fetchInstancias();
     } catch (error: any) {
-      console.error("Erro ao excluir instância:", error);
+      console.error("Erro ao excluir:", error);
       toast({
         title: "Erro",
-        description: "Não foi possível excluir a instância",
+        description: "Não foi possível excluir",
         variant: "destructive",
       });
     }
@@ -479,89 +447,58 @@ const Instancias = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Instâncias WhatsApp</h1>
+            <h1 className="text-2xl font-bold">WhatsApp</h1>
             <p className="text-muted-foreground">
-              Conecte suas instâncias da Evolution API
+              Conecte seus números de WhatsApp
             </p>
           </div>
 
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Nova Instância
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Nova Instância</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 pt-4">
-                <div className="space-y-2">
-                  <Label htmlFor="nome">Nome da Instância</Label>
-                  <Input
-                    id="nome"
-                    placeholder="Ex: Vendas WhatsApp"
-                    value={nome}
-                    onChange={(e) => handleNomeChange(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="apiUrl">URL da Evolution API</Label>
-                  <Input
-                    id="apiUrl"
-                    placeholder="https://sua-evolution-api.com"
-                    value={apiUrl}
-                    onChange={(e) => setApiUrl(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="apiKey">API Key</Label>
-                  <Input
-                    id="apiKey"
-                    type="password"
-                    placeholder="Sua API Key da Evolution"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="instanceName">Nome Técnico (slug)</Label>
-                  <Input
-                    id="instanceName"
-                    placeholder="vendas-whatsapp"
-                    value={instanceName}
-                    onChange={(e) => setInstanceName(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Identificador único na Evolution API (sem espaços ou caracteres especiais)
-                  </p>
-                </div>
-
-                <Button
-                  className="w-full"
-                  onClick={createInstancia}
-                  disabled={creating}
-                >
-                  {creating ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Criando...
-                    </>
-                  ) : (
-                    <>
-                      <QrCode className="h-4 w-4 mr-2" />
-                      Criar e Gerar QR Code
-                    </>
-                  )}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <Button onClick={() => setNewDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Conectar Número
+          </Button>
         </div>
+
+        {/* New Connection Dialog - Simplified */}
+        <Dialog open={newDialogOpen} onOpenChange={setNewDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Smartphone className="h-5 w-5" />
+                Conectar Novo Número
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <Label htmlFor="nome">Nome para identificar</Label>
+                <Input
+                  id="nome"
+                  placeholder="Ex: WhatsApp Vendas"
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && connectNewNumber()}
+                />
+              </div>
+              <Button
+                className="w-full"
+                onClick={connectNewNumber}
+                disabled={connecting}
+              >
+                {connecting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Gerando QR Code...
+                  </>
+                ) : (
+                  <>
+                    <QrCode className="h-4 w-4 mr-2" />
+                    Gerar QR Code
+                  </>
+                )}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* QR Code Dialog */}
         <Dialog open={qrDialogOpen} onOpenChange={closeQrDialog}>
@@ -587,7 +524,7 @@ const Instancias = () => {
                     />
                   </div>
                   <p className="text-sm text-muted-foreground text-center">
-                    Abra o WhatsApp no celular, vá em <strong>Dispositivos Conectados</strong> e escaneie o QR Code
+                    Abra o WhatsApp → <strong>Dispositivos Conectados</strong> → Escaneie
                   </p>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -685,19 +622,14 @@ const Instancias = () => {
               ) : instancias.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                    Nenhuma instância cadastrada
+                    Nenhum número conectado. Clique em "Conectar Número" para começar.
                   </TableCell>
                 </TableRow>
               ) : (
                 instancias.map((instancia) => (
                   <TableRow key={instancia.id}>
                     <TableCell>
-                      <div>
-                        <div className="font-medium">{instancia.nome}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {instancia.instance_name}
-                        </div>
-                      </div>
+                      <div className="font-medium">{instancia.nome}</div>
                     </TableCell>
                     <TableCell>
                       {instancia.numero_whatsapp || (
