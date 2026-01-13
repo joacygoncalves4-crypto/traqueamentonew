@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { BarChart3, Megaphone, Settings } from "lucide-react";
+import { BarChart3, Megaphone, Settings, Smartphone } from "lucide-react";
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -10,6 +10,7 @@ interface AdminLayoutProps {
 const navItems = [
   { href: "/admin/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/admin/campanhas", label: "Campanhas", icon: Megaphone },
+  { href: "/admin/instancias", label: "Instâncias", icon: Smartphone },
   { href: "/admin/config", label: "Configurações", icon: Settings },
 ];
 

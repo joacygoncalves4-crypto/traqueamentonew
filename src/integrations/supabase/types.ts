@@ -21,6 +21,7 @@ export type Database = {
           descricao: string | null
           grupo_id: string
           id: string
+          instancia_id: string | null
           link_grupo: string
           nome: string
           updated_at: string | null
@@ -32,6 +33,7 @@ export type Database = {
           descricao?: string | null
           grupo_id: string
           id?: string
+          instancia_id?: string | null
           link_grupo: string
           nome: string
           updated_at?: string | null
@@ -43,12 +45,21 @@ export type Database = {
           descricao?: string | null
           grupo_id?: string
           id?: string
+          instancia_id?: string | null
           link_grupo?: string
           nome?: string
           updated_at?: string | null
           whatsapp_group_jid?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "campanhas_instancia_id_fkey"
+            columns: ["instancia_id"]
+            isOneToOne: false
+            referencedRelation: "evolution_instancias"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       configuracoes: {
         Row: {
@@ -114,6 +125,77 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      evolution_grupos: {
+        Row: {
+          created_at: string | null
+          group_jid: string
+          group_name: string
+          group_size: number | null
+          id: string
+          instancia_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          group_jid: string
+          group_name: string
+          group_size?: number | null
+          id?: string
+          instancia_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          group_jid?: string
+          group_name?: string
+          group_size?: number | null
+          id?: string
+          instancia_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "evolution_grupos_instancia_id_fkey"
+            columns: ["instancia_id"]
+            isOneToOne: false
+            referencedRelation: "evolution_instancias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      evolution_instancias: {
+        Row: {
+          api_key: string
+          api_url: string
+          created_at: string | null
+          id: string
+          instance_name: string
+          nome: string
+          numero_whatsapp: string | null
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          api_key: string
+          api_url: string
+          created_at?: string | null
+          id?: string
+          instance_name: string
+          nome: string
+          numero_whatsapp?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          api_key?: string
+          api_url?: string
+          created_at?: string | null
+          id?: string
+          instance_name?: string
+          nome?: string
+          numero_whatsapp?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
       }
     }
     Views: {
