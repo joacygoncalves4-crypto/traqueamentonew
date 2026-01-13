@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Plus, Copy, Trash2, Loader2, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
@@ -20,12 +21,29 @@ interface Campanha {
   link_grupo: string;
   grupo_id: string;
   whatsapp_group_jid: string | null;
+  instancia_id: string | null;
   ativo: boolean;
   created_at: string;
 }
 
+interface Instancia {
+  id: string;
+  nome: string;
+  instance_name: string;
+  status: string;
+}
+
+interface Grupo {
+  id: string;
+  group_jid: string;
+  group_name: string;
+  instancia_id: string;
+}
+
 const Campanhas = () => {
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
+  const [instancias, setInstancias] = useState<Instancia[]>([]);
+  const [grupos, setGrupos] = useState<Grupo[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -35,11 +53,22 @@ const Campanhas = () => {
     link_grupo: "",
     grupo_id: "",
     whatsapp_group_jid: "",
+    instancia_id: "",
+    grupo_selecionado_id: "",
   });
 
   useEffect(() => {
     fetchCampanhas();
+    fetchInstancias();
   }, []);
+
+  useEffect(() => {
+    if (formData.instancia_id) {
+      fetchGrupos(formData.instancia_id);
+    } else {
+      setGrupos([]);
+    }
+  }, [formData.instancia_id]);
 
   const fetchCampanhas = async () => {
     const { data, error } = await supabase
@@ -56,6 +85,45 @@ const Campanhas = () => {
     setLoading(false);
   };
 
+  const fetchInstancias = async () => {
+    const { data, error } = await supabase
+      .from("evolution_instancias")
+      .select("id, nome, instance_name, status")
+      .eq("status", "connected")
+      .order("nome");
+
+    if (error) {
+      console.error("Erro ao buscar instâncias:", error);
+    } else {
+      setInstancias(data || []);
+    }
+  };
+
+  const fetchGrupos = async (instanciaId: string) => {
+    const { data, error } = await supabase
+      .from("evolution_grupos")
+      .select("id, group_jid, group_name, instancia_id")
+      .eq("instancia_id", instanciaId)
+      .order("group_name");
+
+    if (error) {
+      console.error("Erro ao buscar grupos:", error);
+    } else {
+      setGrupos(data || []);
+    }
+  };
+
+  const handleGrupoChange = (grupoId: string) => {
+    const grupo = grupos.find(g => g.id === grupoId);
+    if (grupo) {
+      setFormData({
+        ...formData,
+        grupo_selecionado_id: grupoId,
+        whatsapp_group_jid: grupo.group_jid,
+      });
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -66,6 +134,7 @@ const Campanhas = () => {
       link_grupo: formData.link_grupo,
       grupo_id: formData.grupo_id,
       whatsapp_group_jid: formData.whatsapp_group_jid || null,
+      instancia_id: formData.instancia_id || null,
     });
 
     if (error) {
@@ -74,7 +143,15 @@ const Campanhas = () => {
     } else {
       toast.success("Campanha criada com sucesso!");
       setDialogOpen(false);
-      setFormData({ nome: "", descricao: "", link_grupo: "", grupo_id: "", whatsapp_group_jid: "" });
+      setFormData({ 
+        nome: "", 
+        descricao: "", 
+        link_grupo: "", 
+        grupo_id: "", 
+        whatsapp_group_jid: "",
+        instancia_id: "",
+        grupo_selecionado_id: "",
+      });
       fetchCampanhas();
     }
     setSaving(false);
@@ -138,7 +215,7 @@ const Campanhas = () => {
                 Nova Campanha
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-lg">
               <DialogHeader>
                 <DialogTitle>Nova Campanha</DialogTitle>
                 <DialogDescription>
@@ -162,6 +239,7 @@ const Campanhas = () => {
                     required
                   />
                 </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="grupo_id">ID do Grupo (slug)</Label>
                   <Input
@@ -177,6 +255,7 @@ const Campanhas = () => {
                     Será usado na URL: /entrar/{formData.grupo_id || "slug"}
                   </p>
                 </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="link_grupo">Link do Grupo WhatsApp</Label>
                   <Input
@@ -189,20 +268,88 @@ const Campanhas = () => {
                     required
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="whatsapp_group_jid">JID do Grupo WhatsApp</Label>
-                  <Input
-                    id="whatsapp_group_jid"
-                    value={formData.whatsapp_group_jid}
-                    onChange={(e) =>
-                      setFormData({ ...formData, whatsapp_group_jid: e.target.value })
-                    }
-                    placeholder="Ex: 120363123456789012@g.us"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Obtenha via API: GET /group/fetchAllGroups/{"{instance}"} ou veja nos logs do webhook
-                  </p>
+
+                {/* Seleção de Instância e Grupo */}
+                <div className="p-4 border rounded-lg space-y-4 bg-muted/50">
+                  <div className="space-y-2">
+                    <Label htmlFor="instancia">Instância WhatsApp</Label>
+                    <Select
+                      value={formData.instancia_id}
+                      onValueChange={(value) => 
+                        setFormData({ 
+                          ...formData, 
+                          instancia_id: value,
+                          grupo_selecionado_id: "",
+                          whatsapp_group_jid: "",
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione uma instância" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {instancias.length === 0 ? (
+                          <SelectItem value="_none" disabled>
+                            Nenhuma instância conectada
+                          </SelectItem>
+                        ) : (
+                          instancias.map((inst) => (
+                            <SelectItem key={inst.id} value={inst.id}>
+                              {inst.nome}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {instancias.length === 0 && (
+                      <p className="text-xs text-amber-600">
+                        Conecte uma instância em "Instâncias" primeiro
+                      </p>
+                    )}
+                  </div>
+
+                  {formData.instancia_id && (
+                    <div className="space-y-2">
+                      <Label htmlFor="grupo">Grupo do WhatsApp</Label>
+                      <Select
+                        value={formData.grupo_selecionado_id}
+                        onValueChange={handleGrupoChange}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione um grupo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {grupos.length === 0 ? (
+                            <SelectItem value="_none" disabled>
+                              Nenhum grupo sincronizado
+                            </SelectItem>
+                          ) : (
+                            grupos.map((grupo) => (
+                              <SelectItem key={grupo.id} value={grupo.id}>
+                                {grupo.group_name}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      {grupos.length === 0 && (
+                        <p className="text-xs text-amber-600">
+                          Sincronize os grupos na página "Instâncias"
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {formData.whatsapp_group_jid && (
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">JID do Grupo (automático)</Label>
+                      <code className="block text-xs bg-background p-2 rounded border">
+                        {formData.whatsapp_group_jid}
+                      </code>
+                    </div>
+                  )}
                 </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="descricao">Descrição (opcional)</Label>
                   <Textarea
@@ -214,6 +361,7 @@ const Campanhas = () => {
                     placeholder="Descrição que aparecerá na landing page"
                   />
                 </div>
+
                 <Button type="submit" className="w-full" disabled={saving}>
                   {saving ? (
                     <>
