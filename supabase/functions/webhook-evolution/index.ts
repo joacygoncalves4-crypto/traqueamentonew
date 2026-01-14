@@ -65,7 +65,8 @@ serve(async (req) => {
     }
 
     // Extrair JID do grupo (formato: 120363...@g.us)
-    const groupJid = data.jid || data.groupJid || data.remoteJid || "";
+    // Evolution API pode enviar em diferentes campos dependendo da versão
+    const groupJid = data.jid || data.groupJid || data.remoteJid || data.id || "";
     console.log("JID do grupo:", groupJid);
 
     // Extrair participantes (pode ser array ou string)
