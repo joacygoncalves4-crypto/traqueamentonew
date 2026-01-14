@@ -80,7 +80,7 @@ serve(async (req) => {
     // Buscar campanha pelo JID do grupo WhatsApp
     const { data: campanha, error: campanhaError } = await supabase
       .from("campanhas")
-      .select("id, nome, grupo_id, whatsapp_group_jid")
+      .select("id, nome, grupo_id, whatsapp_group_jid, pixel_id")
       .eq("whatsapp_group_jid", groupJid)
       .eq("ativo", true)
       .maybeSingle();
@@ -103,15 +103,30 @@ serve(async (req) => {
 
     console.log("Campanha encontrada:", campanha.nome);
 
-    // Buscar configurações do Pixel
-    const { data: config } = await supabase
-      .from("configuracoes")
-      .select("pixel_id, access_token")
-      .limit(1)
-      .maybeSingle();
+    // Buscar Pixel associado à campanha
+    let pixelId = null;
+    let accessToken = null;
+    let pixelDbId = null;
 
-    const pixelId = config?.pixel_id;
-    const accessToken = config?.access_token;
+    if (campanha.pixel_id) {
+      const { data: pixelData } = await supabase
+        .from("pixels")
+        .select("id, pixel_id, access_token, ativo")
+        .eq("id", campanha.pixel_id)
+        .eq("ativo", true)
+        .maybeSingle();
+
+      if (pixelData) {
+        pixelId = pixelData.pixel_id;
+        accessToken = pixelData.access_token;
+        pixelDbId = pixelData.id;
+        console.log("Pixel encontrado:", pixelId);
+      } else {
+        console.log("Pixel da campanha não encontrado ou inativo");
+      }
+    } else {
+      console.log("Campanha não tem pixel associado");
+    }
 
     const results = [];
 
@@ -190,6 +205,7 @@ serve(async (req) => {
         telefone_masked: maskPhone(phone),
         evento_enviado: eventoEnviado,
         pixel_response: pixelResponse,
+        pixel_id: pixelDbId,
       });
 
       if (insertError) {
