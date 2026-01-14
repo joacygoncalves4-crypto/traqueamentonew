@@ -19,6 +19,7 @@ interface Pixel {
   access_token: string;
   ativo: boolean;
   created_at: string;
+  test_event_code: string | null;
 }
 
 const Pixels = () => {
@@ -27,10 +28,13 @@ const Pixels = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showToken, setShowToken] = useState<Record<string, boolean>>({});
+  const [editingTestCode, setEditingTestCode] = useState<string | null>(null);
+  const [testCodeValue, setTestCodeValue] = useState("");
   const [formData, setFormData] = useState({
     nome: "",
     pixel_id: "",
     access_token: "",
+    test_event_code: "",
   });
 
   useEffect(() => {
@@ -60,6 +64,7 @@ const Pixels = () => {
       nome: formData.nome,
       pixel_id: formData.pixel_id,
       access_token: formData.access_token,
+      test_event_code: formData.test_event_code || null,
     });
 
     if (error) {
@@ -68,7 +73,7 @@ const Pixels = () => {
     } else {
       toast.success("Pixel adicionado com sucesso!");
       setDialogOpen(false);
-      setFormData({ nome: "", pixel_id: "", access_token: "" });
+      setFormData({ nome: "", pixel_id: "", access_token: "", test_event_code: "" });
       fetchPixels();
     }
     setSaving(false);
@@ -107,6 +112,45 @@ const Pixels = () => {
   const maskToken = (token: string) => {
     if (token.length <= 10) return "••••••••";
     return `${token.slice(0, 6)}${"•".repeat(20)}${token.slice(-4)}`;
+  };
+
+  const startEditTestCode = (pixel: Pixel) => {
+    setEditingTestCode(pixel.id);
+    setTestCodeValue(pixel.test_event_code || "");
+  };
+
+  const saveTestCode = async (id: string) => {
+    const { error } = await supabase
+      .from("pixels")
+      .update({ test_event_code: testCodeValue || null })
+      .eq("id", id);
+
+    if (error) {
+      toast.error("Erro ao atualizar código de teste");
+    } else {
+      setPixels(pixels.map((p) => 
+        p.id === id ? { ...p, test_event_code: testCodeValue || null } : p
+      ));
+      toast.success(testCodeValue ? "Modo teste ativado!" : "Modo produção ativado!");
+    }
+    setEditingTestCode(null);
+    setTestCodeValue("");
+  };
+
+  const clearTestCode = async (id: string) => {
+    const { error } = await supabase
+      .from("pixels")
+      .update({ test_event_code: null })
+      .eq("id", id);
+
+    if (error) {
+      toast.error("Erro ao limpar código de teste");
+    } else {
+      setPixels(pixels.map((p) => 
+        p.id === id ? { ...p, test_event_code: null } : p
+      ));
+      toast.success("Modo produção ativado!");
+    }
   };
 
   return (
@@ -180,6 +224,21 @@ const Pixels = () => {
                   </p>
                 </div>
 
+                <div className="space-y-2">
+                  <Label htmlFor="test_event_code">Código de Teste (opcional)</Label>
+                  <Input
+                    id="test_event_code"
+                    value={formData.test_event_code}
+                    onChange={(e) =>
+                      setFormData({ ...formData, test_event_code: e.target.value })
+                    }
+                    placeholder="Ex: TEST12345"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Se preenchido, os eventos irão para a aba "Eventos de Teste" do Facebook
+                  </p>
+                </div>
+
                 <Button type="submit" className="w-full" disabled={saving}>
                   {saving ? (
                     <>
@@ -219,6 +278,7 @@ const Pixels = () => {
                     <TableHead>Nome</TableHead>
                     <TableHead>Pixel ID</TableHead>
                     <TableHead>Access Token</TableHead>
+                    <TableHead>Modo</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
@@ -253,6 +313,67 @@ const Pixels = () => {
                             )}
                           </Button>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        {editingTestCode === pixel.id ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              value={testCodeValue}
+                              onChange={(e) => setTestCodeValue(e.target.value)}
+                              placeholder="TEST12345"
+                              className="w-32 h-8 text-xs"
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => saveTestCode(pixel.id)}
+                            >
+                              Salvar
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setEditingTestCode(null)}
+                            >
+                              ✕
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            {pixel.test_event_code ? (
+                              <>
+                                <Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 border-yellow-500/30">
+                                  Teste
+                                </Badge>
+                                <code className="text-xs bg-muted px-1 rounded">
+                                  {pixel.test_event_code}
+                                </code>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => clearTestCode(pixel.id)}
+                                  title="Ir para produção"
+                                >
+                                  ✕
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/30">
+                                  Produção
+                                </Badge>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => startEditTestCode(pixel)}
+                                  title="Ativar modo teste"
+                                >
+                                  + Teste
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">

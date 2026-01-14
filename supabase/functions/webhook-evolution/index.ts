@@ -116,10 +116,12 @@ serve(async (req) => {
     let accessToken = null;
     let pixelDbId = null;
 
+    let testEventCode: string | null = null;
+
     if (campanha.pixel_id) {
       const { data: pixelData } = await supabase
         .from("pixels")
-        .select("id, pixel_id, access_token, ativo")
+        .select("id, pixel_id, access_token, ativo, test_event_code")
         .eq("id", campanha.pixel_id)
         .eq("ativo", true)
         .maybeSingle();
@@ -128,7 +130,9 @@ serve(async (req) => {
         pixelId = pixelData.pixel_id;
         accessToken = pixelData.access_token;
         pixelDbId = pixelData.id;
+        testEventCode = pixelData.test_event_code;
         console.log("Pixel encontrado:", pixelId);
+        console.log("Modo:", testEventCode ? `Teste (${testEventCode})` : "Produção");
       } else {
         console.log("Pixel da campanha não encontrado ou inativo");
       }
@@ -183,6 +187,8 @@ serve(async (req) => {
                 },
               },
             ],
+            // Só inclui test_event_code se estiver configurado
+            ...(testEventCode && { test_event_code: testEventCode }),
           };
 
           console.log("Enviando para Facebook:", JSON.stringify(facebookPayload, null, 2));

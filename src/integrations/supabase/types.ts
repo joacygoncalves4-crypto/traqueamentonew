@@ -218,6 +218,7 @@ export type Database = {
           id: string
           nome: string
           pixel_id: string
+          test_event_code: string | null
           updated_at: string | null
         }
         Insert: {
@@ -227,6 +228,7 @@ export type Database = {
           id?: string
           nome: string
           pixel_id: string
+          test_event_code?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -236,6 +238,7 @@ export type Database = {
           id?: string
           nome?: string
           pixel_id?: string
+          test_event_code?: string | null
           updated_at?: string | null
         }
         Relationships: []
