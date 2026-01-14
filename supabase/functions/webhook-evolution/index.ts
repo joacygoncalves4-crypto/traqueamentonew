@@ -145,7 +145,24 @@ serve(async (req) => {
 
     // Processar cada participante
     for (const participant of participants) {
-      const phone = participant.replace(/@.*$/, "").replace(/\D/g, "");
+      // Extrair número de telefone - pode ser string ou objeto
+      let phoneRaw: string;
+      if (typeof participant === 'string') {
+        phoneRaw = participant;
+      } else if (participant.phoneNumber) {
+        // Evolution API v2 envia objeto com phoneNumber
+        phoneRaw = typeof participant.phoneNumber === 'string' 
+          ? participant.phoneNumber 
+          : String(participant.phoneNumber);
+      } else if (participant.id) {
+        // Fallback para o id do participante
+        phoneRaw = participant.id;
+      } else {
+        console.log("Participante sem telefone identificável:", participant);
+        continue;
+      }
+      
+      const phone = phoneRaw.replace(/@.*$/, "").replace(/\D/g, "");
       
       if (!phone) {
         console.log("Número inválido ignorado:", participant);
