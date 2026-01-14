@@ -1,29 +1,22 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Copy, Loader2, Save, AlertCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Copy, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import AdminLayout from "@/components/admin/AdminLayout";
 
 interface Configuracao {
   id: string;
-  pixel_id: string | null;
-  access_token: string | null;
   webhook_secret: string | null;
 }
 
 const Configuracoes = () => {
   const [config, setConfig] = useState<Configuracao | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [formData, setFormData] = useState({
-    pixel_id: "",
-    access_token: "",
-  });
 
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhook-evolution`;
 
@@ -34,7 +27,7 @@ const Configuracoes = () => {
   const fetchConfig = async () => {
     const { data, error } = await supabase
       .from("configuracoes")
-      .select("*")
+      .select("id, webhook_secret")
       .limit(1)
       .maybeSingle();
 
@@ -43,35 +36,8 @@ const Configuracoes = () => {
       toast.error("Erro ao carregar configurações");
     } else if (data) {
       setConfig(data);
-      setFormData({
-        pixel_id: data.pixel_id || "",
-        access_token: data.access_token || "",
-      });
     }
     setLoading(false);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!config) return;
-
-    setSaving(true);
-
-    const { error } = await supabase
-      .from("configuracoes")
-      .update({
-        pixel_id: formData.pixel_id || null,
-        access_token: formData.access_token || null,
-      })
-      .eq("id", config.id);
-
-    if (error) {
-      console.error("Erro ao salvar configurações:", error);
-      toast.error("Erro ao salvar configurações");
-    } else {
-      toast.success("Configurações salvas com sucesso!");
-    }
-    setSaving(false);
   };
 
   const copyToClipboard = (text: string, label: string) => {
@@ -159,59 +125,6 @@ const Configuracoes = () => {
           </CardContent>
         </Card>
 
-        {/* Facebook Pixel */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Facebook Pixel</CardTitle>
-            <CardDescription>
-              Configure seu Pixel ID e Access Token para enviar eventos de conversão
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="pixel_id">Pixel ID</Label>
-                <Input
-                  id="pixel_id"
-                  value={formData.pixel_id}
-                  onChange={(e) =>
-                    setFormData({ ...formData, pixel_id: e.target.value })
-                  }
-                  placeholder="Ex: 1234567890123456"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="access_token">Access Token</Label>
-                <Input
-                  id="access_token"
-                  type="password"
-                  value={formData.access_token}
-                  onChange={(e) =>
-                    setFormData({ ...formData, access_token: e.target.value })
-                  }
-                  placeholder="Token da Conversions API"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Obtenha o token no Facebook Events Manager → Configurações → Conversions API
-                </p>
-              </div>
-              <Button type="submit" disabled={saving}>
-                {saving ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Salvando...
-                  </>
-                ) : (
-                  <>
-                    <Save className="mr-2 h-4 w-4" />
-                    Salvar Configurações
-                  </>
-                )}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
         {/* Instruções */}
         <Card>
           <CardHeader>
@@ -226,17 +139,17 @@ const Configuracoes = () => {
               </p>
             </div>
             <div className="space-y-2">
-              <h4 className="font-semibold">2. Configure o Facebook Pixel</h4>
+              <h4 className="font-semibold">2. Cadastre os Pixels</h4>
               <p className="text-sm text-muted-foreground">
-                No Facebook Events Manager, obtenha seu Pixel ID e crie um Access Token
-                para a Conversions API.
+                Na aba <strong>Pixels</strong>, cadastre seus Pixel IDs e Access Tokens do Facebook.
+                Você pode ter múltiplos pixels para diferentes campanhas.
               </p>
             </div>
             <div className="space-y-2">
               <h4 className="font-semibold">3. Crie Campanhas</h4>
               <p className="text-sm text-muted-foreground">
-                Na aba Campanhas, crie uma campanha para cada grupo de WhatsApp.
-                Use o link gerado nos seus anúncios do Facebook.
+                Na aba <strong>Campanhas</strong>, crie uma campanha para cada grupo de WhatsApp.
+                Selecione o Pixel que receberá os eventos e use o link gerado nos seus anúncios do Facebook.
               </p>
             </div>
             <div className="space-y-2">

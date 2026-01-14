@@ -8,6 +8,7 @@ import LandingPage from "./pages/LandingPage";
 import Dashboard from "./pages/admin/Dashboard";
 import Campanhas from "./pages/admin/Campanhas";
 import Instancias from "./pages/admin/Instancias";
+import Pixels from "./pages/admin/Pixels";
 import Configuracoes from "./pages/admin/Configuracoes";
 import NotFound from "./pages/NotFound";
 
@@ -25,6 +26,7 @@ const App = () => (
           <Route path="/admin/dashboard" element={<Dashboard />} />
           <Route path="/admin/campanhas" element={<Campanhas />} />
           <Route path="/admin/instancias" element={<Instancias />} />
+          <Route path="/admin/pixels" element={<Pixels />} />
           <Route path="/admin/config" element={<Configuracoes />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />

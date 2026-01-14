@@ -22,8 +22,16 @@ interface Campanha {
   grupo_id: string;
   whatsapp_group_jid: string | null;
   instancia_id: string | null;
+  pixel_id: string | null;
   ativo: boolean;
   created_at: string;
+}
+
+interface Pixel {
+  id: string;
+  nome: string;
+  pixel_id: string;
+  ativo: boolean;
 }
 
 interface Instancia {
@@ -44,6 +52,7 @@ const Campanhas = () => {
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
   const [instancias, setInstancias] = useState<Instancia[]>([]);
   const [grupos, setGrupos] = useState<Grupo[]>([]);
+  const [pixels, setPixels] = useState<Pixel[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -55,11 +64,13 @@ const Campanhas = () => {
     whatsapp_group_jid: "",
     instancia_id: "",
     grupo_selecionado_id: "",
+    pixel_id: "",
   });
 
   useEffect(() => {
     fetchCampanhas();
     fetchInstancias();
+    fetchPixels();
   }, []);
 
   useEffect(() => {
@@ -99,6 +110,20 @@ const Campanhas = () => {
     }
   };
 
+  const fetchPixels = async () => {
+    const { data, error } = await supabase
+      .from("pixels")
+      .select("id, nome, pixel_id, ativo")
+      .eq("ativo", true)
+      .order("nome");
+
+    if (error) {
+      console.error("Erro ao buscar pixels:", error);
+    } else {
+      setPixels(data || []);
+    }
+  };
+
   const fetchGrupos = async (instanciaId: string) => {
     const { data, error } = await supabase
       .from("evolution_grupos")
@@ -135,6 +160,7 @@ const Campanhas = () => {
       grupo_id: formData.grupo_id,
       whatsapp_group_jid: formData.whatsapp_group_jid || null,
       instancia_id: formData.instancia_id || null,
+      pixel_id: formData.pixel_id || null,
     });
 
     if (error) {
@@ -151,6 +177,7 @@ const Campanhas = () => {
         whatsapp_group_jid: "",
         instancia_id: "",
         grupo_selecionado_id: "",
+        pixel_id: "",
       });
       fetchCampanhas();
     }
@@ -267,6 +294,39 @@ const Campanhas = () => {
                     placeholder="https://chat.whatsapp.com/..."
                     required
                   />
+                </div>
+
+                {/* Seleção de Pixel */}
+                <div className="space-y-2">
+                  <Label htmlFor="pixel">Pixel do Facebook</Label>
+                  <Select
+                    value={formData.pixel_id}
+                    onValueChange={(value) => 
+                      setFormData({ ...formData, pixel_id: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione um pixel" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {pixels.length === 0 ? (
+                        <SelectItem value="_none" disabled>
+                          Nenhum pixel cadastrado
+                        </SelectItem>
+                      ) : (
+                        pixels.map((pixel) => (
+                          <SelectItem key={pixel.id} value={pixel.id}>
+                            {pixel.nome} ({pixel.pixel_id})
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {pixels.length === 0 && (
+                    <p className="text-xs text-amber-600">
+                      Cadastre um pixel em "Pixels" primeiro
+                    </p>
+                  )}
                 </div>
 
                 {/* Seleção de Instância e Grupo */}

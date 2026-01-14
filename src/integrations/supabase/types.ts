@@ -24,6 +24,7 @@ export type Database = {
           instancia_id: string | null
           link_grupo: string
           nome: string
+          pixel_id: string | null
           updated_at: string | null
           whatsapp_group_jid: string | null
         }
@@ -36,6 +37,7 @@ export type Database = {
           instancia_id?: string | null
           link_grupo: string
           nome: string
+          pixel_id?: string | null
           updated_at?: string | null
           whatsapp_group_jid?: string | null
         }
@@ -48,6 +50,7 @@ export type Database = {
           instancia_id?: string | null
           link_grupo?: string
           nome?: string
+          pixel_id?: string | null
           updated_at?: string | null
           whatsapp_group_jid?: string | null
         }
@@ -57,6 +60,13 @@ export type Database = {
             columns: ["instancia_id"]
             isOneToOne: false
             referencedRelation: "evolution_instancias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campanhas_pixel_id_fkey"
+            columns: ["pixel_id"]
+            isOneToOne: false
+            referencedRelation: "pixels"
             referencedColumns: ["id"]
           },
         ]
@@ -94,6 +104,7 @@ export type Database = {
           created_at: string | null
           evento_enviado: boolean | null
           id: string
+          pixel_id: string | null
           pixel_response: string | null
           telefone_hash: string
           telefone_masked: string
@@ -103,6 +114,7 @@ export type Database = {
           created_at?: string | null
           evento_enviado?: boolean | null
           id?: string
+          pixel_id?: string | null
           pixel_response?: string | null
           telefone_hash: string
           telefone_masked: string
@@ -112,6 +124,7 @@ export type Database = {
           created_at?: string | null
           evento_enviado?: boolean | null
           id?: string
+          pixel_id?: string | null
           pixel_response?: string | null
           telefone_hash?: string
           telefone_masked?: string
@@ -193,6 +206,36 @@ export type Database = {
           nome?: string
           numero_whatsapp?: string | null
           status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      pixels: {
+        Row: {
+          access_token: string
+          ativo: boolean | null
+          created_at: string | null
+          id: string
+          nome: string
+          pixel_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          access_token: string
+          ativo?: boolean | null
+          created_at?: string | null
+          id?: string
+          nome: string
+          pixel_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          access_token?: string
+          ativo?: boolean | null
+          created_at?: string | null
+          id?: string
+          nome?: string
+          pixel_id?: string
           updated_at?: string | null
         }
         Relationships: []
