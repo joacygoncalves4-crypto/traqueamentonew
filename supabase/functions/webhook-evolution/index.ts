@@ -7,7 +7,15 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Função para criar hash do telefone
+// Função para criar hash SHA256 (exigido pelo Facebook)
+async function sha256(message: string): Promise<string> {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Função para extrair apenas dígitos do telefone
 function hashPhone(phone: string): string {
   return phone.replace(/\D/g, "");
 }
@@ -150,6 +158,13 @@ serve(async (req) => {
           const eventTime = Math.floor(Date.now() / 1000);
           const eventId = `grp_${phone}_${eventTime}`;
 
+          // Hash SHA256 dos dados do usuário (exigido pelo Facebook)
+          const phoneHash = await sha256(phone);
+          const countryHash = await sha256("br");
+
+          console.log("Hash do telefone:", phoneHash);
+          console.log("Hash do país:", countryHash);
+
           const facebookPayload = {
             data: [
               {
@@ -158,8 +173,8 @@ serve(async (req) => {
                 event_id: eventId,
                 action_source: "website",
                 user_data: {
-                  ph: [phone],
-                  country: ["br"],
+                  ph: [phoneHash],
+                  country: [countryHash],
                 },
                 custom_data: {
                   campaign_id: campanha.grupo_id,
