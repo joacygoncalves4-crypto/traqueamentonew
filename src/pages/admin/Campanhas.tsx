@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Copy, Trash2, Loader2, ExternalLink } from "lucide-react";
+import { Plus, Copy, Trash2, Loader2, ExternalLink, MessageCircle, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import AdminLayout from "@/components/admin/AdminLayout";
 
@@ -55,7 +55,9 @@ const Campanhas = () => {
   const [pixels, setPixels] = useState<Pixel[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editingCampanha, setEditingCampanha] = useState<Campanha | null>(null);
   const [formData, setFormData] = useState({
     nome: "",
     descricao: "",
@@ -169,16 +171,7 @@ const Campanhas = () => {
     } else {
       toast.success("Campanha criada com sucesso!");
       setDialogOpen(false);
-      setFormData({ 
-        nome: "", 
-        descricao: "", 
-        link_grupo: "", 
-        grupo_id: "", 
-        whatsapp_group_jid: "",
-        instancia_id: "",
-        grupo_selecionado_id: "",
-        pixel_id: "",
-      });
+      resetForm();
       fetchCampanhas();
     }
     setSaving(false);
@@ -213,7 +206,78 @@ const Campanhas = () => {
   const copyLink = (grupoId: string) => {
     const link = `${window.location.origin}/entrar/${grupoId}`;
     navigator.clipboard.writeText(link);
-    toast.success("Link copiado para a área de transferência!");
+    toast.success("Link da landing page copiado!");
+  };
+
+  const copyWhatsAppLink = (linkGrupo: string) => {
+    navigator.clipboard.writeText(linkGrupo);
+    toast.success("Link do WhatsApp copiado!");
+  };
+
+  const openEditDialog = async (campanha: Campanha) => {
+    setEditingCampanha(campanha);
+    
+    // Se a campanha tem instancia_id, buscar os grupos dessa instância
+    if (campanha.instancia_id) {
+      await fetchGrupos(campanha.instancia_id);
+    }
+    
+    setFormData({
+      nome: campanha.nome,
+      descricao: campanha.descricao || "",
+      link_grupo: campanha.link_grupo,
+      grupo_id: campanha.grupo_id,
+      whatsapp_group_jid: campanha.whatsapp_group_jid || "",
+      instancia_id: campanha.instancia_id || "",
+      grupo_selecionado_id: "",
+      pixel_id: campanha.pixel_id || "",
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCampanha) return;
+    
+    setSaving(true);
+
+    const { error } = await supabase
+      .from("campanhas")
+      .update({
+        nome: formData.nome,
+        descricao: formData.descricao || null,
+        link_grupo: formData.link_grupo,
+        grupo_id: formData.grupo_id,
+        whatsapp_group_jid: formData.whatsapp_group_jid || null,
+        instancia_id: formData.instancia_id || null,
+        pixel_id: formData.pixel_id || null,
+      })
+      .eq("id", editingCampanha.id);
+
+    if (error) {
+      console.error("Erro ao atualizar campanha:", error);
+      toast.error("Erro ao atualizar campanha");
+    } else {
+      toast.success("Campanha atualizada com sucesso!");
+      setEditDialogOpen(false);
+      setEditingCampanha(null);
+      resetForm();
+      fetchCampanhas();
+    }
+    setSaving(false);
+  };
+
+  const resetForm = () => {
+    setFormData({ 
+      nome: "", 
+      descricao: "", 
+      link_grupo: "", 
+      grupo_id: "", 
+      whatsapp_group_jid: "",
+      instancia_id: "",
+      grupo_selecionado_id: "",
+      pixel_id: "",
+    });
   };
 
   const generateSlug = (nome: string) => {
@@ -505,23 +569,32 @@ const Campanhas = () => {
                           <Button
                             variant="outline"
                             size="sm"
+                            onClick={() => copyWhatsAppLink(campanha.link_grupo)}
+                            title="Copiar link do WhatsApp"
+                          >
+                            <MessageCircle className="h-4 w-4 text-green-600" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
                             onClick={() => copyLink(campanha.grupo_id)}
+                            title="Copiar link da landing page"
                           >
                             <Copy className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() =>
-                              window.open(`/entrar/${campanha.grupo_id}`, "_blank")
-                            }
+                            onClick={() => openEditDialog(campanha)}
+                            title="Editar campanha"
                           >
-                            <ExternalLink className="h-4 w-4" />
+                            <Pencil className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => deleteCampanha(campanha.id)}
+                            title="Excluir campanha"
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
@@ -534,6 +607,157 @@ const Campanhas = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Edit Dialog */}
+        <Dialog open={editDialogOpen} onOpenChange={(open) => {
+          setEditDialogOpen(open);
+          if (!open) {
+            setEditingCampanha(null);
+            resetForm();
+          }
+        }}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Editar Campanha</DialogTitle>
+              <DialogDescription>
+                Atualize os dados da campanha
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit_nome">Nome da Campanha</Label>
+                <Input
+                  id="edit_nome"
+                  value={formData.nome}
+                  onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                  placeholder="Ex: Black Friday 2024"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit_grupo_id">ID do Grupo (slug)</Label>
+                <Input
+                  id="edit_grupo_id"
+                  value={formData.grupo_id}
+                  onChange={(e) => setFormData({ ...formData, grupo_id: e.target.value })}
+                  placeholder="Ex: black-friday-2024"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit_link_grupo">Link do Grupo WhatsApp</Label>
+                <Input
+                  id="edit_link_grupo"
+                  value={formData.link_grupo}
+                  onChange={(e) => setFormData({ ...formData, link_grupo: e.target.value })}
+                  placeholder="https://chat.whatsapp.com/..."
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit_pixel">Pixel do Facebook</Label>
+                <Select
+                  value={formData.pixel_id}
+                  onValueChange={(value) => setFormData({ ...formData, pixel_id: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um pixel" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pixels.map((pixel) => (
+                      <SelectItem key={pixel.id} value={pixel.id}>
+                        {pixel.nome} ({pixel.pixel_id})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="p-4 border rounded-lg space-y-4 bg-muted/50">
+                <div className="space-y-2">
+                  <Label htmlFor="edit_instancia">Instância WhatsApp</Label>
+                  <Select
+                    value={formData.instancia_id}
+                    onValueChange={(value) => {
+                      setFormData({ 
+                        ...formData, 
+                        instancia_id: value,
+                        grupo_selecionado_id: "",
+                        whatsapp_group_jid: "",
+                      });
+                      fetchGrupos(value);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione uma instância" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {instancias.map((inst) => (
+                        <SelectItem key={inst.id} value={inst.id}>
+                          {inst.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {formData.instancia_id && (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit_grupo">Grupo do WhatsApp</Label>
+                    <Select
+                      value={formData.grupo_selecionado_id}
+                      onValueChange={handleGrupoChange}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione um grupo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {grupos.map((grupo) => (
+                          <SelectItem key={grupo.id} value={grupo.id}>
+                            {grupo.group_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {formData.whatsapp_group_jid && (
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">JID do Grupo</Label>
+                    <code className="block text-xs bg-background p-2 rounded border">
+                      {formData.whatsapp_group_jid}
+                    </code>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit_descricao">Descrição (opcional)</Label>
+                <Textarea
+                  id="edit_descricao"
+                  value={formData.descricao}
+                  onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
+                  placeholder="Descrição que aparecerá na landing page"
+                />
+              </div>
+
+              <Button type="submit" className="w-full" disabled={saving}>
+                {saving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  "Salvar Alterações"
+                )}
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     </AdminLayout>
   );
