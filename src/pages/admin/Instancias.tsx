@@ -312,6 +312,17 @@ const Instancias = () => {
     setCurrentInstancia(instancia);
     setQrDialogOpen(true);
     await fetchQrCode(instancia);
+    
+    // Configurar webhook ao reconectar
+    const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhook-evolution`;
+    await supabase.functions.invoke("evolution-api", {
+      body: {
+        action: "webhook",
+        instance_name: instancia.instance_name,
+        webhook_url: webhookUrl,
+      },
+    });
+    
     startPolling(instancia);
   };
 
