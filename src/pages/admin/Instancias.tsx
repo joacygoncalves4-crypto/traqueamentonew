@@ -18,6 +18,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -30,6 +36,7 @@ import {
   Users,
   Wifi,
   WifiOff,
+  Signal,
 } from "lucide-react";
 
 interface Instancia {
@@ -51,6 +58,28 @@ interface Grupo {
   group_size: number;
 }
 
+// Formata número de telefone para exibição
+const formatPhoneNumber = (phone: string | null): string => {
+  if (!phone) return "Não identificado";
+  
+  // Remove caracteres não numéricos
+  const cleaned = phone.replace(/\D/g, "");
+  
+  // Formato brasileiro: +55 XX XXXXX-XXXX
+  if (cleaned.length === 13 && cleaned.startsWith("55")) {
+    return `+${cleaned.slice(0, 2)} ${cleaned.slice(2, 4)} ${cleaned.slice(4, 9)}-${cleaned.slice(9)}`;
+  }
+  // Formato brasileiro sem 9: +55 XX XXXX-XXXX
+  if (cleaned.length === 12 && cleaned.startsWith("55")) {
+    return `+${cleaned.slice(0, 2)} ${cleaned.slice(2, 4)} ${cleaned.slice(4, 8)}-${cleaned.slice(8)}`;
+  }
+  // Retorna formatado com + se tiver mais de 10 dígitos
+  if (cleaned.length > 10) {
+    return `+${cleaned}`;
+  }
+  return phone;
+};
+
 const Instancias = () => {
   const { toast } = useToast();
   const [instancias, setInstancias] = useState<Instancia[]>([]);
@@ -59,6 +88,7 @@ const Instancias = () => {
   const [gruposDialogOpen, setGruposDialogOpen] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState<string | null>(null);
+  const [checking, setChecking] = useState<string | null>(null);
   
   // New connection dialog
   const [newDialogOpen, setNewDialogOpen] = useState(false);
@@ -324,6 +354,65 @@ const Instancias = () => {
     });
     
     startPolling(instancia);
+  };
+
+  // Função para verificar conexão manualmente
+  const checkAndUpdateStatus = async (instancia: Instancia) => {
+    setChecking(instancia.id);
+    try {
+      const { data, error } = await supabase.functions.invoke("evolution-api", {
+        body: {
+          action: "status",
+          instance_name: instancia.instance_name,
+        },
+      });
+
+      if (error) throw error;
+
+      const state = data.data?.state || data.data?.instance?.state;
+      const phoneNumber = data.phoneNumber;
+
+      if (state === "open") {
+        // Atualizar como conectado
+        await supabase
+          .from("evolution_instancias")
+          .update({
+            status: "connected",
+            numero_whatsapp: phoneNumber || instancia.numero_whatsapp,
+          })
+          .eq("id", instancia.id);
+
+        toast({
+          title: "✅ Conectado!",
+          description: phoneNumber 
+            ? `WhatsApp ${formatPhoneNumber(phoneNumber)} está online` 
+            : "WhatsApp está online",
+        });
+      } else {
+        // Atualizar como desconectado
+        await supabase
+          .from("evolution_instancias")
+          .update({ status: "disconnected" })
+          .eq("id", instancia.id);
+
+        toast({
+          title: "⚠️ Desconectado",
+          description: "O WhatsApp não está conectado. Clique em Reconectar para gerar um novo QR Code.",
+          variant: "destructive",
+        });
+      }
+
+      fetchInstancias();
+    } catch (error: any) {
+      console.error("Erro ao verificar conexão:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível verificar a conexão",
+        variant: "destructive",
+      });
+    } finally {
+      setChecking(null);
+    }
   };
 
   const syncGrupos = async (instancia: Instancia) => {
@@ -643,9 +732,9 @@ const Instancias = () => {
                       <div className="font-medium">{instancia.nome}</div>
                     </TableCell>
                     <TableCell>
-                      {instancia.numero_whatsapp || (
-                        <span className="text-muted-foreground">-</span>
-                      )}
+                      <span className={instancia.numero_whatsapp ? "font-mono text-sm" : "text-muted-foreground italic"}>
+                        {formatPhoneNumber(instancia.numero_whatsapp)}
+                      </span>
                     </TableCell>
                     <TableCell>
                       {instancia.status === "connected" ? (
@@ -671,36 +760,78 @@ const Instancias = () => {
                       </Button>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        {instancia.status !== "connected" && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => reconnect(instancia)}
-                          >
-                            <QrCode className="h-4 w-4" />
-                          </Button>
-                        )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => syncGrupos(instancia)}
-                          disabled={syncing === instancia.id || instancia.status !== "connected"}
-                        >
-                          {syncing === instancia.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <RefreshCw className="h-4 w-4" />
+                      <TooltipProvider>
+                        <div className="flex items-center justify-end gap-1">
+                          {instancia.status !== "connected" && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => reconnect(instancia)}
+                                >
+                                  <QrCode className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Reconectar</p>
+                              </TooltipContent>
+                            </Tooltip>
                           )}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => deleteInstancia(instancia)}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => checkAndUpdateStatus(instancia)}
+                                disabled={checking === instancia.id}
+                              >
+                                {checking === instancia.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Signal className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Verificar Conexão</p>
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => syncGrupos(instancia)}
+                                disabled={syncing === instancia.id || instancia.status !== "connected"}
+                              >
+                                {syncing === instancia.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Sincronizar Grupos</p>
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => deleteInstancia(instancia)}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Excluir Instância</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </TooltipProvider>
                     </TableCell>
                   </TableRow>
                 ))
