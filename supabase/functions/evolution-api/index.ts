@@ -151,12 +151,42 @@ Deno.serve(async (req) => {
             
             if (fetchResponse.ok) {
               const instances = await fetchResponse.json();
+              console.log(`[evolution-api] fetchInstances count:`, instances?.length);
+              
+              // Log primeiro item para entender estrutura
+              if (instances?.length > 0) {
+                console.log(`[evolution-api] First instance structure:`, JSON.stringify(instances[0]));
+              }
+              
+              // Tentar encontrar a instância por nome (pode estar em diferentes locais)
               const currentInstance = instances.find((inst: any) => 
-                inst.instance?.instanceName === instance_name
+                inst.instance?.instanceName === instance_name || 
+                inst.instanceName === instance_name ||
+                inst.name === instance_name
               );
               
-              if (currentInstance?.instance?.owner) {
-                phoneNumber = currentInstance.instance.owner.replace("@s.whatsapp.net", "");
+              if (currentInstance) {
+                console.log(`[evolution-api] Found instance:`, JSON.stringify(currentInstance));
+                
+                // O número pode estar em ownerJid, owner, number ou wuid
+                const ownerJid = currentInstance.ownerJid;
+                const owner = currentInstance.owner;
+                const number = currentInstance.number;
+                const wuid = currentInstance.wuid;
+                
+                console.log(`[evolution-api] ownerJid:`, ownerJid, `owner:`, owner, `number:`, number);
+                
+                if (ownerJid) {
+                  phoneNumber = ownerJid.replace("@s.whatsapp.net", "").replace("@lid", "");
+                } else if (owner) {
+                  phoneNumber = owner.replace("@s.whatsapp.net", "").replace("@lid", "");
+                } else if (number) {
+                  phoneNumber = String(number);
+                } else if (wuid) {
+                  phoneNumber = wuid.replace("@s.whatsapp.net", "").replace("@lid", "");
+                }
+                
+                console.log(`[evolution-api] Extracted phone number:`, phoneNumber);
               }
             }
           } catch (e) {
