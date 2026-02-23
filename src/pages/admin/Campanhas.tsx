@@ -23,6 +23,8 @@ interface Campanha {
   whatsapp_group_jid: string | null;
   instancia_id: string | null;
   pixel_id: string | null;
+  telegram_chat_id: string | null;
+  telegram_bot_id: string | null;
   ativo: boolean;
   created_at: string;
 }
@@ -48,11 +50,19 @@ interface Grupo {
   instancia_id: string;
 }
 
+interface TelegramBot {
+  id: string;
+  nome: string;
+  bot_username: string | null;
+  status: string | null;
+}
+
 const Campanhas = () => {
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
   const [instancias, setInstancias] = useState<Instancia[]>([]);
   const [grupos, setGrupos] = useState<Grupo[]>([]);
   const [pixels, setPixels] = useState<Pixel[]>([]);
+  const [telegramBots, setTelegramBots] = useState<TelegramBot[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -67,12 +77,15 @@ const Campanhas = () => {
     instancia_id: "",
     grupo_selecionado_id: "",
     pixel_id: "",
+    telegram_chat_id: "",
+    telegram_bot_id: "",
   });
 
   useEffect(() => {
     fetchCampanhas();
     fetchInstancias();
     fetchPixels();
+    fetchTelegramBots();
   }, []);
 
   useEffect(() => {
@@ -140,6 +153,20 @@ const Campanhas = () => {
     }
   };
 
+  const fetchTelegramBots = async () => {
+    const { data, error } = await supabase
+      .from("telegram_bots")
+      .select("id, nome, bot_username, status")
+      .eq("status", "connected")
+      .order("nome");
+
+    if (error) {
+      console.error("Erro ao buscar bots Telegram:", error);
+    } else {
+      setTelegramBots(data || []);
+    }
+  };
+
   const handleGrupoChange = (grupoId: string) => {
     const grupo = grupos.find(g => g.id === grupoId);
     if (grupo) {
@@ -163,6 +190,8 @@ const Campanhas = () => {
       whatsapp_group_jid: formData.whatsapp_group_jid || null,
       instancia_id: formData.instancia_id || null,
       pixel_id: formData.pixel_id || null,
+      telegram_chat_id: formData.telegram_chat_id || null,
+      telegram_bot_id: formData.telegram_bot_id || null,
     });
 
     if (error) {
@@ -231,6 +260,8 @@ const Campanhas = () => {
       instancia_id: campanha.instancia_id || "",
       grupo_selecionado_id: "",
       pixel_id: campanha.pixel_id || "",
+      telegram_chat_id: campanha.telegram_chat_id || "",
+      telegram_bot_id: campanha.telegram_bot_id || "",
     });
     setEditDialogOpen(true);
   };
@@ -251,6 +282,8 @@ const Campanhas = () => {
         whatsapp_group_jid: formData.whatsapp_group_jid || null,
         instancia_id: formData.instancia_id || null,
         pixel_id: formData.pixel_id || null,
+        telegram_chat_id: formData.telegram_chat_id || null,
+        telegram_bot_id: formData.telegram_bot_id || null,
       })
       .eq("id", editingCampanha.id);
 
@@ -277,6 +310,8 @@ const Campanhas = () => {
       instancia_id: "",
       grupo_selecionado_id: "",
       pixel_id: "",
+      telegram_chat_id: "",
+      telegram_bot_id: "",
     });
   };
 
@@ -470,6 +505,59 @@ const Campanhas = () => {
                       <code className="block text-xs bg-background p-2 rounded border">
                         {formData.whatsapp_group_jid}
                       </code>
+                    </div>
+                  )}
+                </div>
+
+                {/* Seção Telegram */}
+                <div className="p-4 border rounded-lg space-y-4 bg-muted/50">
+                  <Label className="font-semibold">📱 Telegram (opcional)</Label>
+                  <div className="space-y-2">
+                    <Label htmlFor="telegram_bot">Bot do Telegram</Label>
+                    <Select
+                      value={formData.telegram_bot_id}
+                      onValueChange={(value) => 
+                        setFormData({ ...formData, telegram_bot_id: value })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione um bot" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {telegramBots.length === 0 ? (
+                          <SelectItem value="_none" disabled>
+                            Nenhum bot registrado
+                          </SelectItem>
+                        ) : (
+                          telegramBots.map((bot) => (
+                            <SelectItem key={bot.id} value={bot.id}>
+                              {bot.nome} {bot.bot_username ? `(@${bot.bot_username})` : ""}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {telegramBots.length === 0 && (
+                      <p className="text-xs text-amber-600">
+                        Registre um bot em "Telegram" primeiro
+                      </p>
+                    )}
+                  </div>
+
+                  {formData.telegram_bot_id && (
+                    <div className="space-y-2">
+                      <Label htmlFor="telegram_chat_id">Chat ID do Canal/Grupo</Label>
+                      <Input
+                        id="telegram_chat_id"
+                        value={formData.telegram_chat_id}
+                        onChange={(e) =>
+                          setFormData({ ...formData, telegram_chat_id: e.target.value })
+                        }
+                        placeholder="Ex: -1001234567890"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Use bots como @userinfobot para descobrir o Chat ID
+                      </p>
                     </div>
                   )}
                 </div>
@@ -731,6 +819,45 @@ const Campanhas = () => {
                     <code className="block text-xs bg-background p-2 rounded border">
                       {formData.whatsapp_group_jid}
                     </code>
+                  </div>
+                )}
+              </div>
+
+              {/* Seção Telegram (edição) */}
+              <div className="p-4 border rounded-lg space-y-4 bg-muted/50">
+                <Label className="font-semibold">📱 Telegram (opcional)</Label>
+                <div className="space-y-2">
+                  <Label htmlFor="edit_telegram_bot">Bot do Telegram</Label>
+                  <Select
+                    value={formData.telegram_bot_id}
+                    onValueChange={(value) => 
+                      setFormData({ ...formData, telegram_bot_id: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione um bot" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {telegramBots.map((bot) => (
+                        <SelectItem key={bot.id} value={bot.id}>
+                          {bot.nome} {bot.bot_username ? `(@${bot.bot_username})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {formData.telegram_bot_id && (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit_telegram_chat_id">Chat ID do Canal/Grupo</Label>
+                    <Input
+                      id="edit_telegram_chat_id"
+                      value={formData.telegram_chat_id}
+                      onChange={(e) =>
+                        setFormData({ ...formData, telegram_chat_id: e.target.value })
+                      }
+                      placeholder="Ex: -1001234567890"
+                    />
                   </div>
                 )}
               </div>
