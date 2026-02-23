@@ -25,6 +25,8 @@ export type Database = {
           link_grupo: string
           nome: string
           pixel_id: string | null
+          telegram_bot_id: string | null
+          telegram_chat_id: string | null
           updated_at: string | null
           whatsapp_group_jid: string | null
         }
@@ -38,6 +40,8 @@ export type Database = {
           link_grupo: string
           nome: string
           pixel_id?: string | null
+          telegram_bot_id?: string | null
+          telegram_chat_id?: string | null
           updated_at?: string | null
           whatsapp_group_jid?: string | null
         }
@@ -51,6 +55,8 @@ export type Database = {
           link_grupo?: string
           nome?: string
           pixel_id?: string | null
+          telegram_bot_id?: string | null
+          telegram_chat_id?: string | null
           updated_at?: string | null
           whatsapp_group_jid?: string | null
         }
@@ -67,6 +73,13 @@ export type Database = {
             columns: ["pixel_id"]
             isOneToOne: false
             referencedRelation: "pixels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campanhas_telegram_bot_id_fkey"
+            columns: ["telegram_bot_id"]
+            isOneToOne: false
+            referencedRelation: "telegram_bots"
             referencedColumns: ["id"]
           },
         ]
@@ -103,6 +116,7 @@ export type Database = {
           campanha_id: string
           created_at: string | null
           evento_enviado: boolean | null
+          fonte: string | null
           id: string
           pixel_id: string | null
           pixel_response: string | null
@@ -113,6 +127,7 @@ export type Database = {
           campanha_id: string
           created_at?: string | null
           evento_enviado?: boolean | null
+          fonte?: string | null
           id?: string
           pixel_id?: string | null
           pixel_response?: string | null
@@ -123,6 +138,7 @@ export type Database = {
           campanha_id?: string
           created_at?: string | null
           evento_enviado?: boolean | null
+          fonte?: string | null
           id?: string
           pixel_id?: string | null
           pixel_response?: string | null
@@ -240,6 +256,33 @@ export type Database = {
           pixel_id?: string
           test_event_code?: string | null
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      telegram_bots: {
+        Row: {
+          bot_token: string
+          bot_username: string | null
+          created_at: string | null
+          id: string
+          nome: string
+          status: string | null
+        }
+        Insert: {
+          bot_token: string
+          bot_username?: string | null
+          created_at?: string | null
+          id?: string
+          nome: string
+          status?: string | null
+        }
+        Update: {
+          bot_token?: string
+          bot_username?: string | null
+          created_at?: string | null
+          id?: string
+          nome?: string
+          status?: string | null
         }
         Relationships: []
       }
