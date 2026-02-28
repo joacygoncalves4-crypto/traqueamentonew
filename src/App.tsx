@@ -12,6 +12,7 @@ import Pixels from "./pages/admin/Pixels";
 import Configuracoes from "./pages/admin/Configuracoes";
 import Eventos from "./pages/admin/Eventos";
 import Telegram from "./pages/admin/Telegram";
+import MensagemRecebida from "./pages/admin/MensagemRecebida";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -31,6 +32,7 @@ const App = () => (
           <Route path="/admin/pixels" element={<Pixels />} />
           <Route path="/admin/eventos" element={<Eventos />} />
           <Route path="/admin/telegram" element={<Telegram />} />
+          <Route path="/admin/mensagem-recebida" element={<MensagemRecebida />} />
           <Route path="/admin/config" element={<Configuracoes />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
