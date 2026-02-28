@@ -1,132 +1,81 @@
 
 
-# Plano: Integração Telegram para Rastreamento de Entrada em Canais/Grupos
+# Plano: Mensagem Recebida (Tracking por Keyword WhatsApp)
 
 ## Resumo
 
-Criar um sistema completo para rastrear entradas em canais/grupos do Telegram, usando um Bot Token. Quando alguém entrar no canal, o sistema identifica a campanha e dispara o evento para o Facebook Pixel -- igual ao WhatsApp.
+Novo tipo de conversao: quando alguem envia uma mensagem com uma keyword especifica para a instancia WhatsApp, o sistema dispara o evento para o Facebook Pixel/CAPI.
 
 ---
 
-## Como vai funcionar
+## O que sera feito
 
-1. Voce cadastra um **Bot do Telegram** no painel (com o token do BotFather)
-2. O sistema configura automaticamente um **webhook** no Telegram
-3. Quando alguem entra no canal/grupo, o Telegram avisa o bot
-4. O sistema identifica a campanha pelo **chat_id** do canal
-5. Dispara o evento **GrupoEntrada** para o Facebook Pixel
-
----
-
-## Mudancas Necessarias
-
-### 1. Nova tabela: `telegram_bots`
-
-Armazena os bots do Telegram cadastrados.
+### 1. Nova tabela: `mensagem_gatilhos`
 
 | Coluna | Tipo | Descricao |
 |--------|------|-----------|
 | id | uuid | PK |
-| nome | text | Nome do bot |
-| bot_token | text | Token do BotFather |
-| bot_username | text | Username do bot (ex: @meubot) |
-| status | text | connected / disconnected |
+| nome | text | Nome do evento (ex: "Primeira Mensagem - ENTREI") |
+| instance_name | text | Nome da instancia Evolution |
+| keyword | text | Texto gatilho (ex: "ENTREI") |
+| pixel_id | uuid | FK para pixels (opcional) |
+| ativo | boolean | Default true |
 | created_at | timestamp | Data de criacao |
 
-### 2. Adicionar campo na tabela `campanhas`
+RLS: permissivo para todas as operacoes (mesmo padrao das outras tabelas).
 
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| telegram_chat_id | text | Chat ID do canal/grupo Telegram |
-| telegram_bot_id | uuid | FK para telegram_bots |
+### 2. Atualizar webhook da Evolution API
 
-### 3. Adicionar campo na tabela `eventos`
+Atualmente o `webhook-evolution` so processa `GROUP_PARTICIPANTS_UPDATE`. Sera expandido para tambem processar o evento `MESSAGES_UPSERT` (mensagem recebida).
 
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| fonte | text | 'whatsapp' ou 'telegram' (default 'whatsapp') |
+Fluxo ao receber mensagem:
+1. Verificar se e evento `MESSAGES_UPSERT` ou `messages.upsert`
+2. Extrair texto da mensagem e telefone do remetente
+3. Buscar na tabela `mensagem_gatilhos` se alguma keyword bate (case-insensitive, match exato ou `includes`)
+4. Se bater, buscar pixel associado ao gatilho
+5. Enviar evento `MensagemRecebida` para Facebook CAPI
+6. Salvar na tabela `eventos` com `fonte = 'mensagem'`
 
----
+### 3. Atualizar webhook da Evolution API (evolution-api function)
 
-### 4. Nova Edge Function: `webhook-telegram`
+Adicionar `MESSAGES_UPSERT` na lista de eventos do webhook para que a instancia envie mensagens recebidas.
 
-Recebe updates do Telegram Bot API:
-- Filtra evento `chat_member` com status `member` (entrada)
-- Busca campanha pelo `telegram_chat_id`
-- Extrai user_id do Telegram (hash SHA256)
-- Envia evento para Facebook CAPI
-- Salva no banco com fonte = 'telegram'
+### 4. Nova pagina: `/admin/mensagem-recebida`
 
-### 5. Nova Edge Function: `telegram-api`
+Interface para gerenciar gatilhos:
+- Listar gatilhos cadastrados (nome, instancia, keyword, pixel, status)
+- Criar novo gatilho (formulario com nome, instance_name, keyword, pixel)
+- Editar/excluir gatilhos
+- Toggle ativo/inativo
 
-Gerencia os bots:
-- **register**: Salva bot e configura webhook no Telegram
-- **status**: Verifica se bot esta funcionando
-- **delete**: Remove webhook e deleta bot
+### 5. Atualizar navegacao
 
-### 6. Nova pagina: `/admin/telegram`
+- Adicionar link "Msg Recebida" no `AdminLayout` com icone `MessageSquare`
+- Adicionar rota `/admin/mensagem-recebida` no `App.tsx`
 
-Interface para gerenciar bots do Telegram:
-- Cadastrar novo bot (colar o token)
-- Ver status do bot
-- Excluir bot
+### 6. Atualizar config.toml
 
-### 7. Atualizar pagina de Campanhas
-
-- Adicionar opcao de vincular canal Telegram (alem do WhatsApp)
-- Selecionar bot + digitar chat_id do canal
-- Suportar campanhas hibridas (WhatsApp + Telegram)
+O `webhook-evolution` ja tem `verify_jwt = false` (esta no config existente implicitamente). Nao precisa mudar.
 
 ---
 
 ## Fluxo Tecnico
 
 ```text
-Telegram Bot API
+WhatsApp (usuario envia "ENTREI")
        |
-       | (webhook POST)
+       | Evolution API webhook
        v
-webhook-telegram (Edge Function)
+webhook-evolution (Edge Function)
        |
-       | 1. Recebe update "chat_member"
-       | 2. Filtra: new_status == "member"
-       | 3. Busca campanha por telegram_chat_id
-       | 4. Hash SHA256 do user_id
-       | 5. Envia para Facebook CAPI
-       | 6. Salva evento no banco
+       | 1. Detecta evento MESSAGES_UPSERT
+       | 2. Extrai texto + telefone
+       | 3. Busca keyword em mensagem_gatilhos
+       | 4. Match? -> Busca pixel do gatilho
+       | 5. Envia "MensagemRecebida" para Facebook CAPI
+       | 6. Salva evento com fonte='mensagem'
        v
   Facebook Pixel + DB
-```
-
----
-
-## Detalhes Tecnicos
-
-### Edge Function `webhook-telegram`
-- Endpoint: recebe POST do Telegram
-- Evento monitorado: `chat_member` (quando `new_chat_member.status === "member"`)
-- User data para Facebook: hash do user_id do Telegram (ja que nao tem telefone)
-- Event name: `GrupoEntrada` (mesmo do WhatsApp)
-- Custom data inclui: `source: "telegram"`, `campaign_name`, `chat_id`
-
-### Edge Function `telegram-api`
-- Action `register`:
-  1. Valida token chamando `getMe` na API do Telegram
-  2. Configura webhook: `setWebhook` apontando para `webhook-telegram`
-  3. Salva bot no banco
-- Action `status`: Chama `getWebhookInfo` para verificar
-- Action `delete`: Chama `deleteWebhook` e remove do banco
-
-### Webhook URL do Telegram
-```text
-https://aufgcioktpwomlscmkjr.supabase.co/functions/v1/webhook-telegram?bot_id=<uuid>
-```
-O `bot_id` na query string identifica qual bot enviou o update.
-
-### Configuracao no `config.toml`
-```text
-[functions.webhook-telegram]
-verify_jwt = false
 ```
 
 ---
@@ -135,21 +84,10 @@ verify_jwt = false
 
 | Arquivo | Acao |
 |---------|------|
-| `supabase/functions/webhook-telegram/index.ts` | Criar |
-| `supabase/functions/telegram-api/index.ts` | Criar |
-| `src/pages/admin/Telegram.tsx` | Criar |
-| `src/pages/admin/Campanhas.tsx` | Modificar (adicionar opcao Telegram) |
-| `src/App.tsx` | Modificar (adicionar rota /admin/telegram) |
-| `src/components/admin/AdminLayout.tsx` | Modificar (adicionar link Telegram no menu) |
-| Migration SQL | Criar tabela + alterar campanhas/eventos |
-
----
-
-## Resultado Esperado
-
-1. Usuario cadastra bot com token do BotFather
-2. Sistema configura webhook automaticamente
-3. Adiciona bot do Telegram como admin do canal
-4. Cria campanha vinculando o canal ao Pixel
-5. Quando alguem entra no canal, evento dispara automaticamente para o Facebook
+| Migration SQL | Criar tabela `mensagem_gatilhos` |
+| `supabase/functions/webhook-evolution/index.ts` | Expandir para processar MESSAGES_UPSERT |
+| `supabase/functions/evolution-api/index.ts` | Adicionar MESSAGES_UPSERT nos eventos do webhook |
+| `src/pages/admin/MensagemRecebida.tsx` | Criar pagina de gestao |
+| `src/App.tsx` | Adicionar rota |
+| `src/components/admin/AdminLayout.tsx` | Adicionar link no menu |
 
