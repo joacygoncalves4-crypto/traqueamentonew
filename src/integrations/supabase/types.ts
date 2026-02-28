@@ -226,6 +226,44 @@ export type Database = {
         }
         Relationships: []
       }
+      mensagem_gatilhos: {
+        Row: {
+          ativo: boolean | null
+          created_at: string | null
+          id: string
+          instance_name: string
+          keyword: string
+          nome: string
+          pixel_id: string | null
+        }
+        Insert: {
+          ativo?: boolean | null
+          created_at?: string | null
+          id?: string
+          instance_name: string
+          keyword: string
+          nome: string
+          pixel_id?: string | null
+        }
+        Update: {
+          ativo?: boolean | null
+          created_at?: string | null
+          id?: string
+          instance_name?: string
+          keyword?: string
+          nome?: string
+          pixel_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mensagem_gatilhos_pixel_id_fkey"
+            columns: ["pixel_id"]
+            isOneToOne: false
+            referencedRelation: "pixels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pixels: {
         Row: {
           access_token: string
