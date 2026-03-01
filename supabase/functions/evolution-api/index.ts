@@ -6,7 +6,7 @@ const corsHeaders = {
 };
 
 interface EvolutionRequest {
-  action: "create" | "connect" | "status" | "groups" | "webhook" | "delete" | "disconnect" | "fetchInstances";
+  action: "create" | "connect" | "status" | "groups" | "webhook" | "delete" | "disconnect" | "fetchInstances" | "findWebhook";
   instance_name?: string;
   webhook_url?: string;
 }
@@ -285,6 +285,23 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({
           success: true,
           data: deleteData,
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "findWebhook": {
+        const findResponse = await fetch(`${baseUrl}/webhook/find/${instance_name}`, {
+          method: "GET",
+          headers,
+        });
+
+        const findData = await findResponse.json();
+        console.log(`[evolution-api] Find webhook response:`, JSON.stringify(findData));
+
+        return new Response(JSON.stringify({
+          success: true,
+          data: findData,
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
