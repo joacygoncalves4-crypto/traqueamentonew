@@ -6,8 +6,8 @@ const corsHeaders = {
 };
 
 interface EvolutionRequest {
-  action: "create" | "connect" | "status" | "groups" | "webhook" | "delete" | "disconnect";
-  instance_name: string;
+  action: "create" | "connect" | "status" | "groups" | "webhook" | "delete" | "disconnect" | "fetchInstances";
+  instance_name?: string;
   webhook_url?: string;
 }
 
@@ -282,6 +282,42 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({
           success: true,
           data: deleteData,
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "fetchInstances": {
+        const fetchResponse = await fetch(`${baseUrl}/instance/fetchInstances`, {
+          method: "GET",
+          headers,
+        });
+
+        if (!fetchResponse.ok) {
+          const errData = await fetchResponse.json();
+          return new Response(JSON.stringify({
+            success: false,
+            error: errData.message || "Erro ao buscar instâncias",
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const allInstances = await fetchResponse.json();
+        console.log(`[evolution-api] fetchInstances count:`, allInstances?.length);
+
+        const mapped = (allInstances || []).map((inst: any) => {
+          const name = inst.instance?.instanceName || inst.instanceName || inst.name || "";
+          const state = inst.instance?.state || inst.state || "unknown";
+          const ownerJid = inst.instance?.ownerJid || inst.ownerJid || inst.owner || "";
+          const phone = ownerJid ? ownerJid.replace(/@.*$/, "").replace(/\D/g, "") : null;
+          return { instanceName: name, state, phone };
+        });
+
+        return new Response(JSON.stringify({
+          success: true,
+          data: mapped,
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

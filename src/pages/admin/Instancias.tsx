@@ -37,6 +37,7 @@ import {
   Wifi,
   WifiOff,
   Signal,
+  Download,
 } from "lucide-react";
 
 interface Instancia {
@@ -103,6 +104,7 @@ const Instancias = () => {
   // Grupos state
   const [grupos, setGrupos] = useState<Grupo[]>([]);
   const [gruposLoading, setGruposLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     fetchInstancias();
@@ -541,6 +543,74 @@ const Instancias = () => {
     setCurrentInstancia(null);
   };
 
+  const importFromEvolution = async () => {
+    setImporting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("evolution-api", {
+        body: { action: "fetchInstances" },
+      });
+
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error || "Erro ao buscar instâncias");
+
+      const remoteInstances: { instanceName: string; state: string; phone: string | null }[] = data.data || [];
+
+      if (remoteInstances.length === 0) {
+        toast({ title: "Nenhuma instância encontrada na Evolution API" });
+        return;
+      }
+
+      // Get existing instance names
+      const { data: existing } = await supabase
+        .from("evolution_instancias")
+        .select("instance_name");
+      const existingNames = new Set((existing || []).map((e) => e.instance_name));
+
+      const toImport = remoteInstances.filter((r) => r.instanceName && !existingNames.has(r.instanceName));
+
+      if (toImport.length === 0) {
+        toast({ title: "Todas as instâncias já estão importadas!" });
+        return;
+      }
+
+      const rows = toImport.map((inst) => ({
+        nome: inst.instanceName,
+        api_url: "from_env",
+        api_key: "from_env",
+        instance_name: inst.instanceName,
+        status: inst.state === "open" ? "connected" : "disconnected",
+        numero_whatsapp: inst.phone || null,
+      }));
+
+      const { error: insertError } = await supabase.from("evolution_instancias").insert(rows);
+      if (insertError) throw insertError;
+
+      // Configure webhook for each imported instance
+      const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhook-evolution`;
+      for (const inst of toImport) {
+        await supabase.functions.invoke("evolution-api", {
+          body: { action: "webhook", instance_name: inst.instanceName, webhook_url: webhookUrl },
+        }).catch(() => {});
+      }
+
+      toast({
+        title: "Sucesso",
+        description: `${toImport.length} instância(s) importada(s)!`,
+      });
+
+      fetchInstancias();
+    } catch (error: any) {
+      console.error("Erro ao importar:", error);
+      toast({
+        title: "Erro",
+        description: error.message || "Não foi possível importar as instâncias",
+        variant: "destructive",
+      });
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -553,10 +623,20 @@ const Instancias = () => {
             </p>
           </div>
 
-          <Button onClick={() => setNewDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Conectar Número
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={importFromEvolution} disabled={importing}>
+              {importing ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4 mr-2" />
+              )}
+              Importar da Evolution
+            </Button>
+            <Button onClick={() => setNewDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Conectar Número
+            </Button>
+          </div>
         </div>
 
         {/* New Connection Dialog - Simplified */}
