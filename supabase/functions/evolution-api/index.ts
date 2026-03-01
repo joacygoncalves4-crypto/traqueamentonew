@@ -235,10 +235,13 @@ Deno.serve(async (req) => {
           method: "POST",
           headers,
           body: JSON.stringify({
-            url: webhook_url,
-            webhook_by_events: true,
-            webhook_base64: false,
-            events: ["GROUP_PARTICIPANTS_UPDATE", "MESSAGES_UPSERT"],
+            webhook: {
+              url: webhook_url,
+              webhookByEvents: true,
+              webhookBase64: false,
+              events: ["GROUP_PARTICIPANTS_UPDATE", "MESSAGES_UPSERT"],
+              enabled: true,
+            },
           }),
         });
 
