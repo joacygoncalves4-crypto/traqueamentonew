@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Activity } from "lucide-react";
+import { ChevronLeft, ChevronRight, Activity, Users, MessageSquare } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -28,10 +28,13 @@ interface Evento {
   telefone_masked: string;
   evento_enviado: boolean;
   created_at: string;
-  campanha_id: string;
+  campanha_id: string | null;
+  gatilho_id: string | null;
   pixel_id: string | null;
   pixel_response: string | null;
+  fonte: string | null;
   campanha?: { nome: string };
+  gatilho?: { nome: string; keyword: string };
   pixel?: { nome: string };
 }
 
@@ -45,15 +48,23 @@ interface Pixel {
   nome: string;
 }
 
+interface Gatilho {
+  id: string;
+  nome: string;
+  keyword: string;
+}
+
 const ITEMS_PER_PAGE = 20;
 
 const Eventos = () => {
   const [eventos, setEventos] = useState<Evento[]>([]);
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
+  const [gatilhos, setGatilhos] = useState<Gatilho[]>([]);
   const [pixels, setPixels] = useState<Pixel[]>([]);
   const [loading, setLoading] = useState(true);
   const [campanhaFilter, setCampanhaFilter] = useState<string>("all");
   const [pixelFilter, setPixelFilter] = useState<string>("all");
+  const [fonteFilter, setFonteFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
@@ -64,20 +75,22 @@ const Eventos = () => {
   useEffect(() => {
     setCurrentPage(1);
     fetchEventos();
-  }, [campanhaFilter, pixelFilter]);
+  }, [campanhaFilter, pixelFilter, fonteFilter]);
 
   useEffect(() => {
     fetchEventos();
   }, [currentPage]);
 
   const fetchFilters = async () => {
-    const [campanhasRes, pixelsRes] = await Promise.all([
+    const [campanhasRes, pixelsRes, gatilhosRes] = await Promise.all([
       supabase.from("campanhas").select("id, nome").order("nome"),
       supabase.from("pixels").select("id, nome").order("nome"),
+      supabase.from("mensagem_gatilhos").select("id, nome, keyword").order("nome"),
     ]);
 
     if (campanhasRes.data) setCampanhas(campanhasRes.data);
     if (pixelsRes.data) setPixels(pixelsRes.data);
+    if (gatilhosRes.data) setGatilhos(gatilhosRes.data);
   };
 
   const fetchEventos = async () => {
@@ -93,6 +106,9 @@ const Eventos = () => {
     }
     if (pixelFilter !== "all") {
       countQuery = countQuery.eq("pixel_id", pixelFilter);
+    }
+    if (fonteFilter !== "all") {
+      countQuery = countQuery.eq("fonte", fonteFilter);
     }
 
     const { count } = await countQuery;
@@ -111,6 +127,9 @@ const Eventos = () => {
     if (pixelFilter !== "all") {
       dataQuery = dataQuery.eq("pixel_id", pixelFilter);
     }
+    if (fonteFilter !== "all") {
+      dataQuery = dataQuery.eq("fonte", fonteFilter);
+    }
 
     const { data, error } = await dataQuery;
 
@@ -118,18 +137,18 @@ const Eventos = () => {
       console.error("Erro ao buscar eventos:", error);
       setEventos([]);
     } else {
-      // Enrich with campaign and pixel names
-      const enrichedEventos = await Promise.all(
-        (data || []).map(async (evento) => {
-          const campanha = campanhas.find((c) => c.id === evento.campanha_id);
-          const pixel = pixels.find((p) => p.id === evento.pixel_id);
-          return {
-            ...evento,
-            campanha: campanha ? { nome: campanha.nome } : undefined,
-            pixel: pixel ? { nome: pixel.nome } : undefined,
-          };
-        })
-      );
+      // Enrich with campaign, gatilho and pixel names
+      const enrichedEventos = (data || []).map((evento: any) => {
+        const campanha = campanhas.find((c) => c.id === evento.campanha_id);
+        const gatilho = gatilhos.find((g) => g.id === evento.gatilho_id);
+        const pixel = pixels.find((p) => p.id === evento.pixel_id);
+        return {
+          ...evento,
+          campanha: campanha ? { nome: campanha.nome } : undefined,
+          gatilho: gatilho ? { nome: gatilho.nome, keyword: gatilho.keyword } : undefined,
+          pixel: pixel ? { nome: pixel.nome } : undefined,
+        };
+      });
       setEventos(enrichedEventos);
     }
 
@@ -152,7 +171,7 @@ const Eventos = () => {
               Eventos
             </h1>
             <p className="text-muted-foreground">
-              Visualize todos os eventos de entrada em grupos
+              Visualize todos os eventos de entrada em grupos e mensagens recebidas
             </p>
           </div>
           <Badge variant="outline" className="text-lg px-4 py-2">
@@ -167,6 +186,21 @@ const Eventos = () => {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-4">
+              <div className="w-full sm:w-48">
+                <label className="text-sm font-medium mb-2 block">Fonte</label>
+                <Select value={fonteFilter} onValueChange={setFonteFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todas as fontes" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as fontes</SelectItem>
+                    <SelectItem value="whatsapp">Grupo WhatsApp</SelectItem>
+                    <SelectItem value="mensagem">Mensagem Recebida</SelectItem>
+                    <SelectItem value="telegram">Telegram</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="w-full sm:w-64">
                 <label className="text-sm font-medium mb-2 block">Campanha</label>
                 <Select value={campanhaFilter} onValueChange={setCampanhaFilter}>
@@ -220,8 +254,9 @@ const Eventos = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Fonte</TableHead>
                       <TableHead>Telefone</TableHead>
-                      <TableHead>Campanha</TableHead>
+                      <TableHead>Origem</TableHead>
                       <TableHead>Pixel</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Data</TableHead>
@@ -230,12 +265,38 @@ const Eventos = () => {
                   <TableBody>
                     {eventos.map((evento) => (
                       <TableRow key={evento.id}>
+                        <TableCell>
+                          {evento.fonte === "mensagem" ? (
+                            <Badge variant="secondary" className="gap-1">
+                              <MessageSquare className="h-3 w-3" />
+                              Mensagem
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="gap-1">
+                              <Users className="h-3 w-3" />
+                              Grupo
+                            </Badge>
+                          )}
+                        </TableCell>
                         <TableCell className="font-mono">
                           {evento.telefone_masked}
                         </TableCell>
                         <TableCell>
-                          {evento.campanha?.nome || (
-                            <span className="text-muted-foreground">-</span>
+                          {evento.fonte === "mensagem" ? (
+                            evento.gatilho ? (
+                              <div>
+                                <span className="font-medium">{evento.gatilho.nome}</span>
+                                <span className="text-xs text-muted-foreground block">
+                                  Keyword: {evento.gatilho.keyword}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">Gatilho removido</span>
+                            )
+                          ) : (
+                            evento.campanha?.nome || (
+                              <span className="text-muted-foreground">-</span>
+                            )
                           )}
                         </TableCell>
                         <TableCell>
