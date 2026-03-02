@@ -113,10 +113,11 @@ export type Database = {
       }
       eventos: {
         Row: {
-          campanha_id: string
+          campanha_id: string | null
           created_at: string | null
           evento_enviado: boolean | null
           fonte: string | null
+          gatilho_id: string | null
           id: string
           pixel_id: string | null
           pixel_response: string | null
@@ -124,10 +125,11 @@ export type Database = {
           telefone_masked: string
         }
         Insert: {
-          campanha_id: string
+          campanha_id?: string | null
           created_at?: string | null
           evento_enviado?: boolean | null
           fonte?: string | null
+          gatilho_id?: string | null
           id?: string
           pixel_id?: string | null
           pixel_response?: string | null
@@ -135,10 +137,11 @@ export type Database = {
           telefone_masked: string
         }
         Update: {
-          campanha_id?: string
+          campanha_id?: string | null
           created_at?: string | null
           evento_enviado?: boolean | null
           fonte?: string | null
+          gatilho_id?: string | null
           id?: string
           pixel_id?: string | null
           pixel_response?: string | null
@@ -151,6 +154,13 @@ export type Database = {
             columns: ["campanha_id"]
             isOneToOne: false
             referencedRelation: "campanhas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "eventos_gatilho_id_fkey"
+            columns: ["gatilho_id"]
+            isOneToOne: false
+            referencedRelation: "mensagem_gatilhos"
             referencedColumns: ["id"]
           },
         ]

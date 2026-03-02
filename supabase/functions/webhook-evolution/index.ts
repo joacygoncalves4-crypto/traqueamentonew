@@ -162,7 +162,8 @@ async function handleMessageUpsert(payload: any, supabase: any) {
     // Actually, eventos requires campanha_id (FK). We'll save without campanha_id won't work.
     // Let's save with telefone info directly.
     const { error: insertError } = await supabase.from("eventos").insert({
-      campanha_id: gatilho.id, // Using gatilho id - note: this won't have FK constraint to campanhas
+      campanha_id: null,
+      gatilho_id: gatilho.id,
       telefone_hash: hashPhone(senderPhone),
       telefone_masked: maskPhone(senderPhone),
       evento_enviado: eventoEnviado,
