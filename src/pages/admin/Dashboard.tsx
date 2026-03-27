@@ -64,17 +64,11 @@ const Dashboard = () => {
       setCampanhas(campanhasData);
     }
 
-    // Buscar eventos com campos de atribuicao
+    // Buscar eventos (select * para compatibilidade com/sem migration)
     let query = supabase
       .from("eventos")
       .select(`
-        id,
-        telefone_masked,
-        evento_enviado,
-        fonte,
-        fbc,
-        utm_campaign,
-        created_at,
+        *,
         campanhas (nome)
       `)
       .order("created_at", { ascending: false })

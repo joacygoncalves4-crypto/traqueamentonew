@@ -33,7 +33,7 @@ const LandingPage = () => {
 
       const { data, error } = await supabase
         .from("campanhas")
-        .select("id, nome, descricao, link_grupo, tipo_destino, numero_whatsapp, telegram_chat_id")
+        .select("*")
         .eq("grupo_id", campanhaId)
         .eq("ativo", true)
         .maybeSingle();
