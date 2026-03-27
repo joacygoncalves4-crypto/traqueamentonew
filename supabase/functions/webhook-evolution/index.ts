@@ -106,33 +106,61 @@ async function handleMessageUpsert(payload: any, supabase: any) {
 
       if (pixelData) {
         pixelDbId = pixelData.id;
+
+        // Busca dados de atribuicao do clique mais recente (qualquer campanha)
+        // para mensagens diretas, tentamos encontrar pelo telefone na tabela cliques
+        let msgAttr: any = {};
+        try {
+          const { data: clickData } = await supabase
+            .from("cliques")
+            .select("fbclid, fbc, fbp, utm_source, utm_medium, utm_campaign, utm_content, user_agent, landing_url")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (clickData) msgAttr = clickData;
+        } catch (e) {
+          console.error("Erro ao buscar atribuicao para mensagem:", e);
+        }
+
         try {
           const eventTime = Math.floor(Date.now() / 1000);
           const eventId = `msg_${senderPhone}_${eventTime}`;
           const phoneHash = await sha256(senderPhone);
           const countryHash = await sha256("br");
 
+          // Monta user_data completo
+          const user_data: any = {
+            ph: [phoneHash],
+            country: [countryHash],
+          };
+          if (msgAttr.fbc) user_data.fbc = msgAttr.fbc;
+          if (msgAttr.fbp) user_data.fbp = msgAttr.fbp;
+          if (msgAttr.user_agent) user_data.client_user_agent = msgAttr.user_agent;
+
+          const eventData: any = {
+            event_name: "MensagemRecebida",
+            event_time: eventTime,
+            event_id: eventId,
+            action_source: "website",
+            user_data,
+            custom_data: {
+              source: "mensagem",
+              trigger_name: gatilho.nome,
+              keyword: gatilho.keyword,
+              instance_name: gatilho.instance_name,
+            },
+          };
+
+          if (msgAttr.landing_url) eventData.event_source_url = msgAttr.landing_url;
+          if (msgAttr.utm_campaign) eventData.custom_data.utm_campaign = msgAttr.utm_campaign;
+          if (msgAttr.utm_source) eventData.custom_data.utm_source = msgAttr.utm_source;
+
           const facebookPayload: any = {
-            data: [{
-              event_name: "MensagemRecebida",
-              event_time: eventTime,
-              event_id: eventId,
-              action_source: "website",
-              user_data: {
-                ph: [phoneHash],
-                country: [countryHash],
-              },
-              custom_data: {
-                source: "mensagem",
-                trigger_name: gatilho.nome,
-                keyword: gatilho.keyword,
-                instance_name: gatilho.instance_name,
-              },
-            }],
+            data: [eventData],
             ...(pixelData.test_event_code && { test_event_code: pixelData.test_event_code }),
           };
 
-          console.log("Enviando MensagemRecebida para Facebook:", JSON.stringify(facebookPayload, null, 2));
+          console.log("Enviando MensagemRecebida para Facebook com atribuicao:", JSON.stringify(facebookPayload, null, 2));
 
           const fbResponse = await fetch(
             `https://graph.facebook.com/v18.0/${pixelData.pixel_id}/events?access_token=${pixelData.access_token}`,
@@ -276,6 +304,28 @@ async function handleGroupParticipantsUpdate(payload: any, supabase: any) {
     let eventoEnviado = false;
     let pixelResponse = null;
 
+    // Busca dados de atribuicao do clique mais recente desta campanha
+    // (fbclid, fbp, UTMs capturados na landing page)
+    let attr: any = {};
+    try {
+      const { data: clickData } = await supabase
+        .from("cliques")
+        .select("fbclid, fbc, fbp, utm_source, utm_medium, utm_campaign, utm_content, user_agent, landing_url")
+        .eq("campanha_id", campanha.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (clickData) {
+        attr = clickData;
+        console.log("Dados de atribuicao encontrados:", { fbc: attr.fbc, fbp: attr.fbp, utm_campaign: attr.utm_campaign });
+      } else {
+        console.log("Nenhum dado de atribuicao encontrado para esta campanha");
+      }
+    } catch (attrError) {
+      console.error("Erro ao buscar atribuicao:", attrError);
+    }
+
     if (pixelId && accessToken) {
       try {
         const eventTime = Math.floor(Date.now() / 1000);
@@ -283,24 +333,44 @@ async function handleGroupParticipantsUpdate(payload: any, supabase: any) {
         const phoneHash = await sha256(phone);
         const countryHash = await sha256("br");
 
+        // Monta user_data com TODOS os campos disponiveis
+        // para maximizar o Event Match Quality Score no Facebook
+        const user_data: any = {
+          ph: [phoneHash],
+          country: [countryHash],
+        };
+        if (attr.fbc) user_data.fbc = attr.fbc;
+        if (attr.fbp) user_data.fbp = attr.fbp;
+        if (attr.user_agent) user_data.client_user_agent = attr.user_agent;
+
+        const eventData: any = {
+          event_name: "GrupoEntrada",
+          event_time: eventTime,
+          event_id: eventId,
+          action_source: "website",
+          user_data,
+          custom_data: {
+            campaign_id: campanha.grupo_id,
+            campaign_name: campanha.nome,
+            group_jid: groupJid,
+          },
+        };
+
+        // Adiciona URL de origem se disponivel
+        if (attr.landing_url) eventData.event_source_url = attr.landing_url;
+
+        // Adiciona UTMs como custom_data para analise no Facebook
+        if (attr.utm_campaign) eventData.custom_data.utm_campaign = attr.utm_campaign;
+        if (attr.utm_source) eventData.custom_data.utm_source = attr.utm_source;
+        if (attr.utm_medium) eventData.custom_data.utm_medium = attr.utm_medium;
+        if (attr.utm_content) eventData.custom_data.utm_content = attr.utm_content;
+
         const facebookPayload: any = {
-          data: [{
-            event_name: "GrupoEntrada",
-            event_time: eventTime,
-            event_id: eventId,
-            action_source: "website",
-            user_data: {
-              ph: [phoneHash],
-              country: [countryHash],
-            },
-            custom_data: {
-              campaign_id: campanha.grupo_id,
-              campaign_name: campanha.nome,
-              group_jid: groupJid,
-            },
-          }],
+          data: [eventData],
           ...(testEventCode && { test_event_code: testEventCode }),
         };
+
+        console.log("Enviando GrupoEntrada para Facebook com atribuicao:", JSON.stringify(facebookPayload, null, 2));
 
         const fbResponse = await fetch(
           `https://graph.facebook.com/v18.0/${pixelId}/events?access_token=${accessToken}`,
@@ -331,6 +401,11 @@ async function handleGroupParticipantsUpdate(payload: any, supabase: any) {
       evento_enviado: eventoEnviado,
       pixel_response: pixelResponse,
       pixel_id: pixelDbId,
+      fbclid: attr.fbclid || null,
+      fbc: attr.fbc || null,
+      fbp: attr.fbp || null,
+      utm_campaign: attr.utm_campaign || null,
+      user_agent: attr.user_agent || null,
     });
 
     if (insertError) {

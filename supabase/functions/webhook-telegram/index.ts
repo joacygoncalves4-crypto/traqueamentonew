@@ -113,6 +113,25 @@ serve(async (req) => {
     let eventoEnviado = false;
     let pixelResponse = null;
 
+    // Busca dados de atribuicao do clique mais recente desta campanha
+    let attr: any = {};
+    try {
+      const { data: clickData } = await supabase
+        .from("cliques")
+        .select("fbclid, fbc, fbp, utm_source, utm_medium, utm_campaign, utm_content, user_agent, landing_url")
+        .eq("campanha_id", campanha.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (clickData) {
+        attr = clickData;
+        console.log("Dados de atribuicao encontrados:", { fbc: attr.fbc, fbp: attr.fbp });
+      }
+    } catch (attrError) {
+      console.error("Erro ao buscar atribuicao:", attrError);
+    }
+
     // Enviar evento para Facebook CAPI
     if (pixelId && accessToken) {
       try {
@@ -120,30 +139,40 @@ serve(async (req) => {
         const eventId = `tg_${userId}_${eventTime}`;
         const countryHash = await sha256("br");
 
+        // Monta user_data com todos os campos disponiveis
+        const user_data: any = {
+          external_id: [userIdHash],
+          country: [countryHash],
+        };
+        if (attr.fbc) user_data.fbc = attr.fbc;
+        if (attr.fbp) user_data.fbp = attr.fbp;
+        if (attr.user_agent) user_data.client_user_agent = attr.user_agent;
+
+        const eventData: any = {
+          event_name: "GrupoEntrada",
+          event_time: eventTime,
+          event_id: eventId,
+          action_source: "website",
+          user_data,
+          custom_data: {
+            source: "telegram",
+            campaign_id: campanha.grupo_id,
+            campaign_name: campanha.nome,
+            chat_id: chatId,
+            user_name: userName,
+          },
+        };
+
+        if (attr.landing_url) eventData.event_source_url = attr.landing_url;
+        if (attr.utm_campaign) eventData.custom_data.utm_campaign = attr.utm_campaign;
+        if (attr.utm_source) eventData.custom_data.utm_source = attr.utm_source;
+
         const facebookPayload = {
-          data: [
-            {
-              event_name: "GrupoEntrada",
-              event_time: eventTime,
-              event_id: eventId,
-              action_source: "website",
-              user_data: {
-                external_id: [userIdHash],
-                country: [countryHash],
-              },
-              custom_data: {
-                source: "telegram",
-                campaign_id: campanha.grupo_id,
-                campaign_name: campanha.nome,
-                chat_id: chatId,
-                user_name: userName,
-              },
-            },
-          ],
+          data: [eventData],
           ...(testEventCode && { test_event_code: testEventCode }),
         };
 
-        console.log("Enviando para Facebook:", JSON.stringify(facebookPayload, null, 2));
+        console.log("Enviando Telegram para Facebook com atribuicao:", JSON.stringify(facebookPayload, null, 2));
 
         const fbResponse = await fetch(
           `https://graph.facebook.com/v18.0/${pixelId}/events?access_token=${accessToken}`,
@@ -167,7 +196,7 @@ serve(async (req) => {
       }
     }
 
-    // Salvar evento no banco
+    // Salvar evento no banco com dados de atribuicao
     const { error: insertError } = await supabase.from("eventos").insert({
       campanha_id: campanha.id,
       telefone_hash: userIdHash,
@@ -176,6 +205,11 @@ serve(async (req) => {
       pixel_response: pixelResponse,
       pixel_id: pixelDbId,
       fonte: "telegram",
+      fbclid: attr.fbclid || null,
+      fbc: attr.fbc || null,
+      fbp: attr.fbp || null,
+      utm_campaign: attr.utm_campaign || null,
+      user_agent: attr.user_agent || null,
     });
 
     if (insertError) {

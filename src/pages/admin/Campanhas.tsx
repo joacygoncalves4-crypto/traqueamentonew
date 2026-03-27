@@ -25,6 +25,8 @@ interface Campanha {
   pixel_id: string | null;
   telegram_chat_id: string | null;
   telegram_bot_id: string | null;
+  tipo_destino: string | null;
+  numero_whatsapp: string | null;
   ativo: boolean;
   created_at: string;
 }
@@ -79,6 +81,8 @@ const Campanhas = () => {
     pixel_id: "",
     telegram_chat_id: "",
     telegram_bot_id: "",
+    tipo_destino: "grupo",
+    numero_whatsapp: "",
   });
 
   useEffect(() => {
@@ -192,6 +196,8 @@ const Campanhas = () => {
       pixel_id: formData.pixel_id || null,
       telegram_chat_id: formData.telegram_chat_id || null,
       telegram_bot_id: formData.telegram_bot_id || null,
+      tipo_destino: formData.tipo_destino || "grupo",
+      numero_whatsapp: formData.numero_whatsapp || null,
     });
 
     if (error) {
@@ -262,6 +268,8 @@ const Campanhas = () => {
       pixel_id: campanha.pixel_id || "",
       telegram_chat_id: campanha.telegram_chat_id || "",
       telegram_bot_id: campanha.telegram_bot_id || "",
+      tipo_destino: campanha.tipo_destino || "grupo",
+      numero_whatsapp: campanha.numero_whatsapp || "",
     });
     setEditDialogOpen(true);
   };
@@ -284,6 +292,8 @@ const Campanhas = () => {
         pixel_id: formData.pixel_id || null,
         telegram_chat_id: formData.telegram_chat_id || null,
         telegram_bot_id: formData.telegram_bot_id || null,
+        tipo_destino: formData.tipo_destino || "grupo",
+        numero_whatsapp: formData.numero_whatsapp || null,
       })
       .eq("id", editingCampanha.id);
 
@@ -301,17 +311,19 @@ const Campanhas = () => {
   };
 
   const resetForm = () => {
-    setFormData({ 
-      nome: "", 
-      descricao: "", 
-      link_grupo: "", 
-      grupo_id: "", 
+    setFormData({
+      nome: "",
+      descricao: "",
+      link_grupo: "",
+      grupo_id: "",
       whatsapp_group_jid: "",
       instancia_id: "",
       grupo_selecionado_id: "",
       pixel_id: "",
       telegram_chat_id: "",
       telegram_bot_id: "",
+      tipo_destino: "grupo",
+      numero_whatsapp: "",
     });
   };
 
@@ -382,18 +394,62 @@ const Campanhas = () => {
                   </p>
                 </div>
 
+                {/* Tipo de Destino */}
                 <div className="space-y-2">
-                  <Label htmlFor="link_grupo">Link do Grupo WhatsApp</Label>
-                  <Input
-                    id="link_grupo"
-                    value={formData.link_grupo}
-                    onChange={(e) =>
-                      setFormData({ ...formData, link_grupo: e.target.value })
+                  <Label htmlFor="tipo_destino">Tipo de Destino</Label>
+                  <Select
+                    value={formData.tipo_destino}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, tipo_destino: value })
                     }
-                    placeholder="https://chat.whatsapp.com/..."
-                    required
-                  />
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="grupo">Grupo WhatsApp</SelectItem>
+                      <SelectItem value="numero">Numero WhatsApp (conversa direta)</SelectItem>
+                      <SelectItem value="telegram">Grupo/Canal Telegram</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
+
+                {/* Link do grupo (para grupo WPP e Telegram) */}
+                {(formData.tipo_destino === "grupo" || formData.tipo_destino === "telegram") && (
+                  <div className="space-y-2">
+                    <Label htmlFor="link_grupo">
+                      {formData.tipo_destino === "telegram" ? "Link do Canal Telegram" : "Link do Grupo WhatsApp"}
+                    </Label>
+                    <Input
+                      id="link_grupo"
+                      value={formData.link_grupo}
+                      onChange={(e) =>
+                        setFormData({ ...formData, link_grupo: e.target.value })
+                      }
+                      placeholder={formData.tipo_destino === "telegram" ? "https://t.me/..." : "https://chat.whatsapp.com/..."}
+                      required
+                    />
+                  </div>
+                )}
+
+                {/* Numero WhatsApp (para conversa direta) */}
+                {formData.tipo_destino === "numero" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="numero_whatsapp">Numero do WhatsApp</Label>
+                    <Input
+                      id="numero_whatsapp"
+                      value={formData.numero_whatsapp}
+                      onChange={(e) =>
+                        setFormData({ ...formData, numero_whatsapp: e.target.value, link_grupo: `https://wa.me/${e.target.value.replace(/\D/g, "")}` })
+                      }
+                      placeholder="5511999999999"
+                      required
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Formato: codigo do pais + DDD + numero (sem espacos ou sinais)
+                    </p>
+                  </div>
+                )}
 
                 {/* Seleção de Pixel */}
                 <div className="space-y-2">
