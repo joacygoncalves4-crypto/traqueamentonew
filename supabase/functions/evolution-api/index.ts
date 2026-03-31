@@ -22,14 +22,20 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get Evolution API credentials from environment
-    const api_url = Deno.env.get("EVOLUTION_API_URL");
-    const api_key = Deno.env.get("EVOLUTION_API_KEY");
+    // Get Evolution API credentials from database (configuracoes table)
+    const { data: config, error: configError } = await supabase
+      .from("configuracoes")
+      .select("evolution_api_url, evolution_api_key")
+      .limit(1)
+      .maybeSingle();
+
+    const api_url = config?.evolution_api_url || Deno.env.get("EVOLUTION_API_URL");
+    const api_key = config?.evolution_api_key || Deno.env.get("EVOLUTION_API_KEY");
 
     if (!api_url || !api_key) {
       return new Response(JSON.stringify({
         success: false,
-        error: "Evolution API não configurada. Configure EVOLUTION_API_URL e EVOLUTION_API_KEY.",
+        error: "Evolution API não configurada. Vá em Configurações e adicione a URL e API Key da Evolution.",
       }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

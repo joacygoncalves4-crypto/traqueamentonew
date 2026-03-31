@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Copy, Loader2, AlertCircle } from "lucide-react";
+import { Copy, Loader2, AlertCircle, Save } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import AdminLayout from "@/components/admin/AdminLayout";
@@ -12,11 +12,16 @@ import AdminLayout from "@/components/admin/AdminLayout";
 interface Configuracao {
   id: string;
   webhook_secret: string | null;
+  evolution_api_url: string | null;
+  evolution_api_key: string | null;
 }
 
 const Configuracoes = () => {
   const [config, setConfig] = useState<Configuracao | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [evolutionUrl, setEvolutionUrl] = useState("");
+  const [evolutionKey, setEvolutionKey] = useState("");
 
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhook-evolution`;
 
@@ -27,7 +32,7 @@ const Configuracoes = () => {
   const fetchConfig = async () => {
     const { data, error } = await supabase
       .from("configuracoes")
-      .select("id, webhook_secret")
+      .select("*")
       .limit(1)
       .maybeSingle();
 
@@ -36,8 +41,29 @@ const Configuracoes = () => {
       toast.error("Erro ao carregar configurações");
     } else if (data) {
       setConfig(data);
+      setEvolutionUrl(data.evolution_api_url || "");
+      setEvolutionKey(data.evolution_api_key || "");
     }
     setLoading(false);
+  };
+
+  const saveEvolutionConfig = async () => {
+    if (!config) return;
+    setSaving(true);
+    const { error } = await supabase
+      .from("configuracoes")
+      .update({
+        evolution_api_url: evolutionUrl.replace(/\/$/, ""),
+        evolution_api_key: evolutionKey,
+      })
+      .eq("id", config.id);
+
+    if (error) {
+      toast.error("Erro ao salvar configurações");
+    } else {
+      toast.success("Credenciais da Evolution API salvas!");
+    }
+    setSaving(false);
   };
 
   const copyToClipboard = (text: string, label: string) => {
@@ -64,6 +90,43 @@ const Configuracoes = () => {
             Configure as integrações do sistema
           </p>
         </div>
+
+        {/* Evolution API Credentials */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Evolution API</CardTitle>
+            <CardDescription>
+              Configure as credenciais da sua Evolution API para conectar instâncias WhatsApp
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>URL da API</Label>
+              <Input
+                value={evolutionUrl}
+                onChange={(e) => setEvolutionUrl(e.target.value)}
+                placeholder="https://sua-evolution-api.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>API Key</Label>
+              <Input
+                value={evolutionKey}
+                onChange={(e) => setEvolutionKey(e.target.value)}
+                placeholder="Sua chave da API"
+                type="password"
+              />
+            </div>
+            <Button onClick={saveEvolutionConfig} disabled={saving}>
+              {saving ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
+              Salvar Credenciais
+            </Button>
+          </CardContent>
+        </Card>
 
         {/* Webhook URL */}
         <Card>
@@ -105,9 +168,6 @@ const Configuracoes = () => {
                     <Copy className="h-4 w-4" />
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Use este secret para validar as requisições do webhook
-                </p>
               </div>
             )}
             <Alert>
@@ -117,11 +177,6 @@ const Configuracoes = () => {
                 O sistema filtra automaticamente apenas entradas (action: add).
               </AlertDescription>
             </Alert>
-            <div className="text-sm text-muted-foreground space-y-1">
-              <p><strong>Como obter o JID do grupo:</strong></p>
-              <p>1. Via API: <code className="bg-muted px-1 rounded">GET /group/fetchAllGroups/{"{instance}"}</code></p>
-              <p>2. Via logs: Quando o primeiro lead entrar, o JID aparecerá nos logs do webhook</p>
-            </div>
           </CardContent>
         </Card>
 
@@ -132,30 +187,33 @@ const Configuracoes = () => {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <h4 className="font-semibold">1. Configure a Evolution API</h4>
+              <h4 className="font-semibold">1. Configure a Evolution API (acima)</h4>
               <p className="text-sm text-muted-foreground">
-                No painel da Evolution API, adicione um webhook apontando para a URL acima.
-                Configure para o evento <strong>GROUP_PARTICIPANTS_UPDATE</strong>.
+                Adicione a URL e API Key da sua Evolution API. As credenciais são salvas no banco de dados.
               </p>
             </div>
             <div className="space-y-2">
-              <h4 className="font-semibold">2. Cadastre os Pixels</h4>
+              <h4 className="font-semibold">2. Conecte um Número WhatsApp</h4>
+              <p className="text-sm text-muted-foreground">
+                Na aba <strong>Instâncias</strong>, conecte um número escaneando o QR Code.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <h4 className="font-semibold">3. Cadastre os Pixels</h4>
               <p className="text-sm text-muted-foreground">
                 Na aba <strong>Pixels</strong>, cadastre seus Pixel IDs e Access Tokens do Facebook.
-                Você pode ter múltiplos pixels para diferentes campanhas.
               </p>
             </div>
             <div className="space-y-2">
-              <h4 className="font-semibold">3. Crie Campanhas</h4>
+              <h4 className="font-semibold">4. Crie Campanhas</h4>
               <p className="text-sm text-muted-foreground">
-                Na aba <strong>Campanhas</strong>, crie uma campanha para cada grupo de WhatsApp.
-                Selecione o Pixel que receberá os eventos e use o link gerado nos seus anúncios do Facebook.
+                Na aba <strong>Campanhas</strong>, crie uma campanha vinculando pixel + instância + grupo.
               </p>
             </div>
             <div className="space-y-2">
-              <h4 className="font-semibold">4. Acompanhe no Dashboard</h4>
+              <h4 className="font-semibold">5. Acompanhe no Dashboard</h4>
               <p className="text-sm text-muted-foreground">
-                Veja todos os eventos de entrada em tempo real no Dashboard.
+                Veja todos os eventos e atribuição em tempo real no Dashboard.
               </p>
             </div>
           </CardContent>
