@@ -61,7 +61,13 @@ serve(async (req) => {
       }
 
       // 3. Configurar webhook no Telegram
-      const webhookUrl = `${supabaseUrl}/functions/v1/webhook-telegram?bot_id=${botData.id}`;
+      // supabaseUrl is internal (http://kong:8000) inside Docker, so we need the public URL
+      // Try x-forwarded-host (set by Traefik/EasyPanel proxy), fallback to host header
+      const publicHost = req.headers.get("x-forwarded-host") || req.headers.get("host");
+      const publicProto = req.headers.get("x-forwarded-proto") || "https";
+      const publicBaseUrl = publicHost ? `${publicProto}://${publicHost}` : supabaseUrl;
+      console.log(`[telegram-api] Public base URL for webhook: ${publicBaseUrl}`);
+      const webhookUrl = `${publicBaseUrl}/functions/v1/webhook-telegram?bot_id=${botData.id}`;
       const setWebhookRes = await fetch(
         `https://api.telegram.org/bot${bot_token}/setWebhook`,
         {
