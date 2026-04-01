@@ -353,7 +353,7 @@ const Campanhas = () => {
                 Nova Campanha
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg">
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Nova Campanha</DialogTitle>
                 <DialogDescription>
@@ -760,7 +760,7 @@ const Campanhas = () => {
             resetForm();
           }
         }}>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Editar Campanha</DialogTitle>
               <DialogDescription>
