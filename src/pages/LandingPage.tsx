@@ -13,6 +13,15 @@ interface Campanha {
   tipo_destino: string | null;
   numero_whatsapp: string | null;
   telegram_chat_id: string | null;
+  pixel_id: string | null;
+}
+
+// Tipo do window pra fbq
+declare global {
+  interface Window {
+    fbq?: (...args: unknown[]) => void;
+    _fbq?: unknown;
+  }
 }
 
 const LandingPage = () => {
@@ -52,13 +61,69 @@ const LandingPage = () => {
     fetchCampanha();
   }, [campanhaId]);
 
+  // Carrega o Facebook Pixel dinamicamente baseado no pixel_id da campanha
+  useEffect(() => {
+    if (!campanha?.pixel_id) return;
+
+    let cancelled = false;
+
+    const loadPixel = async () => {
+      // Busca o pixel_id real (numérico do Facebook) na tabela pixels
+      const { data: pixelData } = await supabase
+        .from("pixels")
+        .select("pixel_id")
+        .eq("id", campanha.pixel_id!)
+        .eq("ativo", true)
+        .maybeSingle();
+
+      if (cancelled || !pixelData?.pixel_id) return;
+
+      const FB_PIXEL_ID = pixelData.pixel_id;
+
+      // Injeção do snippet oficial do Facebook Pixel
+      // Cria o cookie _fbp e dispara PageView
+      if (typeof window === "undefined" || window.fbq) {
+        // Já carregado — só dispara init/PageView pro pixel da campanha
+        if (window.fbq) {
+          window.fbq("init", FB_PIXEL_ID);
+          window.fbq("track", "PageView");
+        }
+        return;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (function (f: any, b: Document, e: string, v: string) {
+        if (f.fbq) return;
+        const n: any = (f.fbq = function () {
+          // eslint-disable-next-line prefer-rest-params
+          n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments);
+        });
+        if (!f._fbq) f._fbq = n;
+        n.push = n;
+        n.loaded = true;
+        n.version = "2.0";
+        n.queue = [];
+        const t = b.createElement(e) as HTMLScriptElement;
+        t.async = true;
+        t.src = v;
+        const s = b.getElementsByTagName(e)[0];
+        s.parentNode?.insertBefore(t, s);
+      })(window, document, "script", "https://connect.facebook.net/en_US/fbevents.js");
+
+      window.fbq?.("init", FB_PIXEL_ID);
+      window.fbq?.("track", "PageView");
+    };
+
+    loadPixel();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [campanha]);
+
   const captureAndRedirect = async () => {
     if (!campanha) return;
     setRedirecting(true);
-
-    // ==========================================
-    // CAPTURA DE DADOS DE ATRIBUICAO DO FACEBOOK
-    // ==========================================
 
     // 1. fbclid - Facebook Click ID (vem automatico na URL do anuncio)
     const fbclid = searchParams.get("fbclid");
@@ -77,30 +142,39 @@ const LandingPage = () => {
     const utm_content = searchParams.get("utm_content");
     const utm_term = searchParams.get("utm_term");
 
-    // 4. Dados do browser
-    const user_agent = navigator.userAgent;
     const landing_url = window.location.href;
 
     // ==========================================
-    // SALVA NO BANCO (tabela cliques)
+    // CHAMA Edge Function track-click
+    // (captura IP server-side, gera click_id, salva como pending)
     // ==========================================
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+
     try {
-      await supabase.from("cliques").insert({
-        campanha_id: campanha.id,
-        fbclid,
-        fbc,
-        fbp,
-        utm_source,
-        utm_medium,
-        utm_campaign,
-        utm_content,
-        utm_term,
-        user_agent,
-        landing_url,
+      await fetch(`${supabaseUrl}/functions/v1/track-click`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify({
+          campanha_id: campanha.id,
+          fbclid,
+          fbc,
+          fbp,
+          utm_source,
+          utm_medium,
+          utm_campaign,
+          utm_content,
+          utm_term,
+          landing_url,
+        }),
       });
     } catch (err) {
-      console.error("Erro ao salvar clique:", err);
-      // Nao bloqueia o redirecionamento se falhar o insert
+      console.error("Erro ao registrar clique:", err);
+      // Nao bloqueia o redirecionamento
     }
 
     // ==========================================
@@ -110,22 +184,17 @@ const LandingPage = () => {
     let redirectUrl = "";
 
     if (tipoDestino === "numero" && campanha.numero_whatsapp) {
-      // Redireciona para conversa direta no WhatsApp
       const numero = campanha.numero_whatsapp.replace(/\D/g, "");
       redirectUrl = `https://wa.me/${numero}`;
     } else if (tipoDestino === "telegram" && campanha.link_grupo) {
-      // Redireciona para grupo/canal Telegram
       redirectUrl = campanha.link_grupo;
     } else {
-      // Redireciona para grupo WhatsApp (padrao)
       redirectUrl = campanha.link_grupo;
     }
 
     if (redirectUrl) {
-      // Delay de 1.5s para garantir que o insert foi processado
-      setTimeout(() => {
-        window.location.href = redirectUrl;
-      }, 1500);
+      // Redireciona imediatamente — o await acima já garantiu que o clique foi salvo
+      window.location.href = redirectUrl;
     } else {
       setRedirecting(false);
     }

@@ -282,6 +282,18 @@ async function handleGroupParticipantsUpdate(payload: any, supabase: any) {
     }
   }
 
+  // ==========================================
+  // CLEANUP: marca cliques pendentes desta campanha mais velhos que 5min como expired
+  // ==========================================
+  const FIVE_MIN_MS = 5 * 60 * 1000;
+  const fiveMinAgoIso = new Date(Date.now() - FIVE_MIN_MS).toISOString();
+  await supabase
+    .from("cliques")
+    .update({ status: "expired" })
+    .eq("campanha_id", campanha.id)
+    .eq("status", "pending")
+    .lt("created_at", fiveMinAgoIso);
+
   const results = [];
 
   for (const participant of participants) {
@@ -289,88 +301,99 @@ async function handleGroupParticipantsUpdate(payload: any, supabase: any) {
     if (typeof participant === 'string') {
       phoneRaw = participant;
     } else if (participant.phoneNumber) {
-      phoneRaw = typeof participant.phoneNumber === 'string' 
-        ? participant.phoneNumber 
+      phoneRaw = typeof participant.phoneNumber === 'string'
+        ? participant.phoneNumber
         : String(participant.phoneNumber);
     } else if (participant.id) {
       phoneRaw = participant.id;
     } else {
       continue;
     }
-    
+
     const phone = phoneRaw.replace(/@.*$/, "").replace(/\D/g, "");
     if (!phone) continue;
 
-    let eventoEnviado = false;
-    let pixelResponse = null;
+    // ==========================================
+    // FIFO MATCH: pega o clique pendente MAIS ANTIGO desta campanha
+    // dentro da janela de 5 minutos
+    // ==========================================
+    const { data: clickData } = await supabase
+      .from("cliques")
+      .select("id, click_id, fbclid, fbc, fbp, utm_source, utm_medium, utm_campaign, utm_content, user_agent, landing_url, ip_address")
+      .eq("campanha_id", campanha.id)
+      .eq("status", "pending")
+      .gte("created_at", fiveMinAgoIso)
+      .order("created_at", { ascending: true })  // FIFO: mais antigo primeiro
+      .limit(1)
+      .maybeSingle();
 
-    // Busca dados de atribuicao do clique mais recente desta campanha
-    // (fbclid, fbp, UTMs capturados na landing page)
-    let attr: any = {};
-    try {
-      const { data: clickData } = await supabase
-        .from("cliques")
-        .select("fbclid, fbc, fbp, utm_source, utm_medium, utm_campaign, utm_content, user_agent, landing_url")
-        .eq("campanha_id", campanha.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (clickData) {
-        attr = clickData;
-        console.log("Dados de atribuicao encontrados:", { fbc: attr.fbc, fbp: attr.fbp, utm_campaign: attr.utm_campaign });
-      } else {
-        console.log("Nenhum dado de atribuicao encontrado para esta campanha");
-      }
-    } catch (attrError) {
-      console.error("Erro ao buscar atribuicao:", attrError);
+    // Sem clique pendente válido → NÃO envia ao Facebook (qualidade > volume)
+    if (!clickData) {
+      console.log(`[FIFO] Sem clique pendente válido para campanha ${campanha.id} — não enviando ao Facebook`);
+      await supabase.from("eventos").insert({
+        campanha_id: campanha.id,
+        telefone_hash: hashPhone(phone),
+        telefone_masked: maskPhone(phone),
+        evento_enviado: false,
+        pixel_response: "match_falhou_sem_clique_pendente",
+        pixel_id: pixelDbId,
+        fonte: "whatsapp",
+      });
+      results.push({ phone: maskPhone(phone), pixel_sent: false, reason: "sem_clique_pendente" });
+      continue;
     }
+
+    console.log(`[FIFO] Match encontrado: click_id=${clickData.click_id} fbc=${clickData.fbc ? "ok" : "null"} fbp=${clickData.fbp ? "ok" : "null"} ip=${clickData.ip_address ? "ok" : "null"}`);
+
+    let eventoEnviado = false;
+    let pixelResponse: string | null = null;
 
     if (pixelId && accessToken) {
       try {
         const eventTime = Math.floor(Date.now() / 1000);
-        const eventId = `grp_${phone}_${eventTime}`;
         const phoneHash = await sha256(phone);
         const countryHash = await sha256("br");
 
-        // Monta user_data com TODOS os campos disponiveis
-        // para maximizar o Event Match Quality Score no Facebook
+        // user_data ENRIQUECIDO — todos os sinais possíveis pra subir EMQ
         const user_data: any = {
           ph: [phoneHash],
+          external_id: [phoneHash],  // ID estável do usuário
           country: [countryHash],
         };
-        if (attr.fbc) user_data.fbc = attr.fbc;
-        if (attr.fbp) user_data.fbp = attr.fbp;
-        if (attr.user_agent) user_data.client_user_agent = attr.user_agent;
+        if (clickData.fbc) user_data.fbc = clickData.fbc;
+        if (clickData.fbp) user_data.fbp = clickData.fbp;
+        if (clickData.user_agent) user_data.client_user_agent = clickData.user_agent;
+        if (clickData.ip_address) user_data.client_ip_address = clickData.ip_address;
 
+        // STANDARD EVENT "Lead" (custom events não otimizam campanhas)
+        // event_id = click_id estável → permite dedupe browser+server no futuro
         const eventData: any = {
-          event_name: "GrupoEntrada",
+          event_name: "Lead",
           event_time: eventTime,
-          event_id: eventId,
+          event_id: clickData.click_id,
           action_source: "website",
           user_data,
           custom_data: {
+            lead_type: "grupo_whatsapp",
+            lead_source: "grupo_direto",
             campaign_id: campanha.grupo_id,
             campaign_name: campanha.nome,
             group_jid: groupJid,
           },
         };
 
-        // Adiciona URL de origem se disponivel
-        if (attr.landing_url) eventData.event_source_url = attr.landing_url;
-
-        // Adiciona UTMs como custom_data para analise no Facebook
-        if (attr.utm_campaign) eventData.custom_data.utm_campaign = attr.utm_campaign;
-        if (attr.utm_source) eventData.custom_data.utm_source = attr.utm_source;
-        if (attr.utm_medium) eventData.custom_data.utm_medium = attr.utm_medium;
-        if (attr.utm_content) eventData.custom_data.utm_content = attr.utm_content;
+        if (clickData.landing_url) eventData.event_source_url = clickData.landing_url;
+        if (clickData.utm_campaign) eventData.custom_data.utm_campaign = clickData.utm_campaign;
+        if (clickData.utm_source) eventData.custom_data.utm_source = clickData.utm_source;
+        if (clickData.utm_medium) eventData.custom_data.utm_medium = clickData.utm_medium;
+        if (clickData.utm_content) eventData.custom_data.utm_content = clickData.utm_content;
 
         const facebookPayload: any = {
           data: [eventData],
           ...(testEventCode && { test_event_code: testEventCode }),
         };
 
-        console.log("Enviando GrupoEntrada para Facebook com atribuicao:", JSON.stringify(facebookPayload, null, 2));
+        console.log("Enviando Lead para Facebook:", JSON.stringify(facebookPayload, null, 2));
 
         const fbResponse = await fetch(
           `https://graph.facebook.com/v18.0/${pixelId}/events?access_token=${accessToken}`,
@@ -382,11 +405,9 @@ async function handleGroupParticipantsUpdate(payload: any, supabase: any) {
         );
 
         const fbData = await fbResponse.json();
+        pixelResponse = JSON.stringify(fbData);
         if (fbResponse.ok && fbData.events_received) {
           eventoEnviado = true;
-          pixelResponse = JSON.stringify(fbData);
-        } else {
-          pixelResponse = JSON.stringify(fbData);
         }
       } catch (fbError) {
         console.error("Erro ao enviar para Facebook:", fbError);
@@ -394,25 +415,43 @@ async function handleGroupParticipantsUpdate(payload: any, supabase: any) {
       }
     }
 
-    const { error: insertError } = await supabase.from("eventos").insert({
-      campanha_id: campanha.id,
-      telefone_hash: hashPhone(phone),
-      telefone_masked: maskPhone(phone),
-      evento_enviado: eventoEnviado,
-      pixel_response: pixelResponse,
-      pixel_id: pixelDbId,
-      fbclid: attr.fbclid || null,
-      fbc: attr.fbc || null,
-      fbp: attr.fbp || null,
-      utm_campaign: attr.utm_campaign || null,
-      user_agent: attr.user_agent || null,
-    });
+    // Insere o evento e captura o ID pra ligar com o clique
+    const { data: insertedEvento, error: insertError } = await supabase
+      .from("eventos")
+      .insert({
+        campanha_id: campanha.id,
+        telefone_hash: hashPhone(phone),
+        telefone_masked: maskPhone(phone),
+        evento_enviado: eventoEnviado,
+        pixel_response: pixelResponse,
+        pixel_id: pixelDbId,
+        fonte: "whatsapp",
+        fbclid: clickData.fbclid || null,
+        fbc: clickData.fbc || null,
+        fbp: clickData.fbp || null,
+        utm_campaign: clickData.utm_campaign || null,
+        user_agent: clickData.user_agent || null,
+      })
+      .select("id")
+      .single();
 
     if (insertError) {
       console.error("Erro ao salvar evento:", insertError);
     }
 
-    results.push({ phone: maskPhone(phone), pixel_sent: eventoEnviado });
+    // Marca o clique como matched (não pode ser reutilizado)
+    if (insertedEvento) {
+      await supabase
+        .from("cliques")
+        .update({
+          status: "matched",
+          matched_evento_id: insertedEvento.id,
+          matched_at: new Date().toISOString(),
+        })
+        .eq("id", clickData.id);
+    }
+
+    results.push({ phone: maskPhone(phone), pixel_sent: eventoEnviado, click_id: clickData.click_id });
   }
 
   return {
