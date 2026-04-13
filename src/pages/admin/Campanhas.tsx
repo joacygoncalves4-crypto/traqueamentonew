@@ -10,9 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Copy, Trash2, Loader2, ExternalLink, MessageCircle, Pencil } from "lucide-react";
+import { Plus, Copy, Trash2, Loader2, ExternalLink, MessageCircle, Pencil, Code } from "lucide-react";
 import { toast } from "sonner";
 import AdminLayout from "@/components/admin/AdminLayout";
+import TrackingExternoDialog from "@/components/TrackingExternoDialog";
 
 interface Campanha {
   id: string;
@@ -70,6 +71,8 @@ const Campanhas = () => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingCampanha, setEditingCampanha] = useState<Campanha | null>(null);
+  const [trackingExternoOpen, setTrackingExternoOpen] = useState(false);
+  const [trackingExternoCampanha, setTrackingExternoCampanha] = useState<Campanha | null>(null);
   const [formData, setFormData] = useState({
     nome: "",
     descricao: "",
@@ -729,6 +732,17 @@ const Campanhas = () => {
                           <Button
                             variant="outline"
                             size="sm"
+                            onClick={() => {
+                              setTrackingExternoCampanha(campanha);
+                              setTrackingExternoOpen(true);
+                            }}
+                            title="Tracking Externo (script para LP externa)"
+                          >
+                            <Code className="h-4 w-4 text-blue-600" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
                             onClick={() => openEditDialog(campanha)}
                             title="Editar campanha"
                           >
@@ -941,6 +955,12 @@ const Campanhas = () => {
             </form>
           </DialogContent>
         </Dialog>
+        {/* Tracking Externo Dialog */}
+        <TrackingExternoDialog
+          open={trackingExternoOpen}
+          onOpenChange={setTrackingExternoOpen}
+          campanha={trackingExternoCampanha}
+        />
       </div>
     </AdminLayout>
   );
