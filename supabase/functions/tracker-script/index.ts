@@ -145,7 +145,7 @@ function trackAndRedirect(e){
   tracking=true;
 
   var fbp=getCookie("_fbp");
-  var fbc=fbclid?("fb.1."+Date.now()+"."+fbclid):"";
+  var fbc=fbclid?("fb.1."+Math.floor(Date.now()/1000)+"."+fbclid):"";
 
   var payload={
     campanha_id:CFG.campanhaId,

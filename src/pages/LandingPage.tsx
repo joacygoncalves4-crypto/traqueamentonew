@@ -127,7 +127,7 @@ const LandingPage = () => {
 
     // 1. fbclid - Facebook Click ID (vem automatico na URL do anuncio)
     const fbclid = searchParams.get("fbclid");
-    const fbc = fbclid ? `fb.1.${Date.now()}.${fbclid}` : null;
+    const fbc = fbclid ? `fb.1.${Math.floor(Date.now() / 1000)}.${fbclid}` : null;
 
     // 2. fbp - Facebook Browser Pixel ID (cookie _fbp gerado pelo pixel)
     const fbpCookie = document.cookie

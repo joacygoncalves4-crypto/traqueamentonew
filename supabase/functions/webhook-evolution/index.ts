@@ -8,7 +8,9 @@ const corsHeaders = {
 };
 
 async function sha256(message: string): Promise<string> {
-  const msgBuffer = new TextEncoder().encode(message);
+  // Facebook CAPI exige: normalizar (trim + lowercase + remover espaços) ANTES de hashear
+  const normalized = message.trim().toLowerCase().replace(/\s/g, '');
+  const msgBuffer = new TextEncoder().encode(normalized);
   const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
@@ -163,7 +165,7 @@ async function handleMessageUpsert(payload: any, supabase: any) {
           console.log("Enviando MensagemRecebida para Facebook com atribuicao:", JSON.stringify(facebookPayload, null, 2));
 
           const fbResponse = await fetch(
-            `https://graph.facebook.com/v18.0/${pixelData.pixel_id}/events?access_token=${pixelData.access_token}`,
+            `https://graph.facebook.com/v21.0/${pixelData.pixel_id}/events?access_token=${pixelData.access_token}`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -396,7 +398,7 @@ async function handleGroupParticipantsUpdate(payload: any, supabase: any) {
         console.log("Enviando Lead para Facebook:", JSON.stringify(facebookPayload, null, 2));
 
         const fbResponse = await fetch(
-          `https://graph.facebook.com/v18.0/${pixelId}/events?access_token=${accessToken}`,
+          `https://graph.facebook.com/v21.0/${pixelId}/events?access_token=${accessToken}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
