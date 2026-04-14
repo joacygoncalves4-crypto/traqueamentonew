@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { BarChart3, Users, CheckCircle, Clock, Loader2, MousePointer, TrendingUp } from "lucide-react";
+import { BarChart3, Users, CheckCircle, Clock, Loader2, MousePointer, TrendingUp, Zap, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import AdminLayout from "@/components/admin/AdminLayout";
@@ -34,11 +34,22 @@ interface AtribuicaoRow {
   com_fbc: number;
 }
 
+interface CampanhaRealtime {
+  nome: string;
+  hoje_total: number;
+  hoje_ads: number;
+  hoje_direto: number;
+  ultimas24h_total: number;
+  ultimas24h_ads: number;
+}
+
 const Dashboard = () => {
   const [eventos, setEventos] = useState<Evento[]>([]);
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
   const [atribuicao, setAtribuicao] = useState<AtribuicaoRow[]>([]);
+  const [campanhaRealtime, setCampanhaRealtime] = useState<CampanhaRealtime[]>([]);
   const [loading, setLoading] = useState(true);
+  const [realtimeLoading, setRealtimeLoading] = useState(false);
   const [filtroCapanha, setFiltroCampanha] = useState<string>("all");
   const [stats, setStats] = useState({
     total: 0,
@@ -49,7 +60,71 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchData();
+    fetchRealtime();
   }, [filtroCapanha]);
+
+  // Auto-refresh a cada 60 segundos
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchRealtime();
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchRealtime = async () => {
+    setRealtimeLoading(true);
+    try {
+      // Buscar todas campanhas ativas
+      const { data: camps } = await supabase
+        .from("campanhas")
+        .select("id, nome")
+        .eq("ativo", true)
+        .order("nome");
+
+      if (!camps || camps.length === 0) {
+        setCampanhaRealtime([]);
+        setRealtimeLoading(false);
+        return;
+      }
+
+      const hojeStart = new Date();
+      hojeStart.setHours(0, 0, 0, 0);
+      const hojeIso = hojeStart.toISOString();
+
+      const h24Ago = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+      // Buscar eventos de hoje e ultimas 24h para todas campanhas
+      const { data: eventosRecentes } = await supabase
+        .from("eventos")
+        .select("campanha_id, fbc, evento_enviado, created_at")
+        .gte("created_at", h24Ago)
+        .eq("fonte", "whatsapp")
+        .eq("evento_enviado", true);
+
+      const results: CampanhaRealtime[] = camps.map((camp) => {
+        const eventsCamp = (eventosRecentes || []).filter(
+          (e) => e.campanha_id === camp.id
+        );
+        const eventosHoje = eventsCamp.filter((e) => e.created_at >= hojeIso);
+        const hojeAds = eventosHoje.filter((e) => e.fbc);
+        const h24Ads = eventsCamp.filter((e) => e.fbc);
+
+        return {
+          nome: camp.nome,
+          hoje_total: eventosHoje.length,
+          hoje_ads: hojeAds.length,
+          hoje_direto: eventosHoje.length - hojeAds.length,
+          ultimas24h_total: eventsCamp.length,
+          ultimas24h_ads: h24Ads.length,
+        };
+      }).filter((r) => r.ultimas24h_total > 0);
+
+      setCampanhaRealtime(results);
+    } catch (err) {
+      console.error("Erro ao buscar realtime:", err);
+    }
+    setRealtimeLoading(false);
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -221,6 +296,75 @@ const Dashboard = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Resultados em Tempo Real por Campanha */}
+        {campanhaRealtime.length > 0 && (
+          <Card className="border-green-200 bg-green-50/50">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Zap className="h-5 w-5 text-green-600" />
+                  <div>
+                    <CardTitle>Entradas no Grupo - Tempo Real</CardTitle>
+                    <CardDescription>
+                      Atualiza automaticamente a cada 60 segundos (o Meta Ads demora 24-72h pra mostrar)
+                    </CardDescription>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchRealtime}
+                  disabled={realtimeLoading}
+                >
+                  <RefreshCw className={`h-4 w-4 mr-1 ${realtimeLoading ? "animate-spin" : ""}`} />
+                  Atualizar
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Campanha</TableHead>
+                    <TableHead className="text-center">Hoje (Anuncio)</TableHead>
+                    <TableHead className="text-center">Hoje (Direto)</TableHead>
+                    <TableHead className="text-center">Hoje (Total)</TableHead>
+                    <TableHead className="text-center">24h (Anuncio)</TableHead>
+                    <TableHead className="text-center">24h (Total)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {campanhaRealtime.map((row) => (
+                    <TableRow key={row.nome}>
+                      <TableCell className="font-medium">{row.nome}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="default" className="bg-green-600 text-base px-3">
+                          {row.hoje_ads}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="secondary">{row.hoje_direto}</Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="text-base px-3">{row.hoje_total}</Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="default" className="bg-blue-500">{row.ultimas24h_ads}</Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline">{row.ultimas24h_total}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <p className="text-xs text-muted-foreground mt-3">
+                <strong>Anuncio</strong> = entrou via anuncio (tem fbc/fbclid) | <strong>Direto</strong> = entrou direto no grupo (sem passar pelo anuncio)
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Tabela de Atribuicao por UTM */}
         {atribuicao.length > 0 && (
