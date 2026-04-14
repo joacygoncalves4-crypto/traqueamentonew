@@ -502,10 +502,16 @@ serve(async (req) => {
 
     let result;
 
-    if (event === "MESSAGES_UPSERT" || event === "messages.upsert") {
+    // IMPORTANTE: Evolution API envia o mesmo evento em 2 formatos (antigo e novo).
+    // Aceitar APENAS um formato pra evitar duplicação.
+    if (event === "messages.upsert") {
       result = await handleMessageUpsert(payload, supabase);
-    } else if (event === "GROUP_PARTICIPANTS_UPDATE" || event === "group-participants.update") {
+    } else if (event === "group-participants.update") {
       result = await handleGroupParticipantsUpdate(payload, supabase);
+    } else if (event === "MESSAGES_UPSERT" || event === "GROUP_PARTICIPANTS_UPDATE") {
+      // Formato antigo — ignorar pra evitar duplicata
+      console.log("Formato antigo ignorado (dedup):", event);
+      result = { message: "Formato antigo ignorado", event };
     } else {
       console.log("Evento ignorado:", event);
       result = { message: "Evento ignorado", event };
