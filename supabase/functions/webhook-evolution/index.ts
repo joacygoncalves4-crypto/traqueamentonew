@@ -316,6 +316,26 @@ async function handleGroupParticipantsUpdate(payload: any, supabase: any) {
     if (!phone) continue;
 
     // ==========================================
+    // DEDUP: verifica se já processou esse telefone nesta campanha nos últimos 60s
+    // (Evolution API pode enviar o mesmo webhook 2x com formatos diferentes)
+    // ==========================================
+    const dedupPhoneHash = hashPhone(phone);
+    const oneMinAgoIso = new Date(Date.now() - 60 * 1000).toISOString();
+    const { data: eventoExistente } = await supabase
+      .from("eventos")
+      .select("id")
+      .eq("campanha_id", campanha.id)
+      .eq("telefone_hash", dedupPhoneHash)
+      .gte("created_at", oneMinAgoIso)
+      .maybeSingle();
+
+    if (eventoExistente) {
+      console.log(`[DEDUP] Evento duplicado para ${maskPhone(phone)} na campanha ${campanha.nome} — ignorando`);
+      results.push({ phone: maskPhone(phone), pixel_sent: false, reason: "duplicado" });
+      continue;
+    }
+
+    // ==========================================
     // FIFO MATCH: pega o clique pendente MAIS ANTIGO desta campanha
     // dentro da janela de 5 minutos
     // ==========================================
