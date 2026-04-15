@@ -180,44 +180,41 @@ function trackAndRedirect(e){
   },2000);
 }
 
-// 5. Detecta botao CTA
-function attachButton(){
-  // Prioridade 1: elemento com data-rastreio
-  var btn=document.querySelector("[data-rastreio]");
-  if(btn){
-    btn.addEventListener("click",trackAndRedirect);
-    return;
-  }
+// 5. Event delegation no document (funciona em SPAs React/Vue/etc)
+// Qualquer clique no site passa por aqui e decidimos se e um botao rastreavel
+var keywords=["entrar","participar","grupo","whatsapp","telegram","acessar","quero","clique","click"];
 
-  // Prioridade 2: links que apontam pra WhatsApp ou Telegram
-  var links=document.querySelectorAll('a[href*="chat.whatsapp.com"],a[href*="wa.me"],a[href*="t.me"]');
-  if(links.length>0){
-    for(var i=0;i<links.length;i++){
-      links[i].addEventListener("click",trackAndRedirect);
-    }
-    return;
-  }
-
-  // Prioridade 3: botao/link com texto relevante
-  var allBtns=document.querySelectorAll("a, button");
-  var keywords=["entrar","participar","grupo","whatsapp","telegram","acessar","quero"];
-  for(var j=0;j<allBtns.length;j++){
-    var txt=(allBtns[j].textContent||"").toLowerCase();
-    for(var k=0;k<keywords.length;k++){
-      if(txt.indexOf(keywords[k])!==-1){
-        allBtns[j].addEventListener("click",trackAndRedirect);
-        return;
+function isTrackableTarget(el){
+  if(!el||el.nodeType!==1)return false;
+  // Sobe ate achar <a> ou <button> ou [data-rastreio]
+  var node=el;
+  for(var hop=0;hop<6&&node&&node!==document.body;hop++){
+    if(node.hasAttribute&&node.hasAttribute("data-rastreio"))return node;
+    var tag=(node.tagName||"").toLowerCase();
+    if(tag==="a"||tag==="button"){
+      var href=(node.getAttribute&&node.getAttribute("href"))||"";
+      // Link direto pra wpp/telegram
+      if(href.indexOf("chat.whatsapp.com")!==-1||href.indexOf("wa.me")!==-1||href.indexOf("t.me")!==-1){
+        return node;
+      }
+      // Texto do botao com keyword
+      var txt=(node.textContent||"").toLowerCase();
+      for(var k=0;k<keywords.length;k++){
+        if(txt.indexOf(keywords[k])!==-1)return node;
       }
     }
+    node=node.parentNode;
   }
+  return false;
 }
 
-// Aguarda DOM pronto
-if(document.readyState==="loading"){
-  document.addEventListener("DOMContentLoaded",attachButton);
-}else{
-  attachButton();
-}
+// Intercepta no capture phase pra rodar antes do handler do React
+document.addEventListener("click",function(e){
+  var hit=isTrackableTarget(e.target);
+  if(hit){
+    trackAndRedirect(e);
+  }
+},true);
 
 })();`;
 }
