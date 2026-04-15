@@ -74,17 +74,21 @@ serve(async (req) => {
     // 4. Fallback: url.host do request (ultima opcao)
     const envPublicUrl = Deno.env.get("PUBLIC_SUPABASE_URL");
     const fwdHost = req.headers.get("x-forwarded-host");
-    const fwdProto = req.headers.get("x-forwarded-proto") || "https";
     const hostHeader = req.headers.get("host") || "";
     const isInternalHost = /^(kong|functions|localhost|127\.|0\.0\.0\.0)/i.test(hostHeader);
 
+    // SEMPRE https em producao (LP do cliente e HTTPS, se nos retornarmos http
+    // o fetch da pra mixed-content block). O x-forwarded-proto do Kong as vezes
+    // vem como "http" porque o SSL termina no Traefik antes do Kong.
+    const publicProto = "https";
+
     let publicUrl: string;
     if (envPublicUrl) {
-      publicUrl = envPublicUrl.replace(/\/$/, "");
+      publicUrl = envPublicUrl.replace(/\/$/, "").replace(/^http:/, "https:");
     } else if (fwdHost) {
-      publicUrl = `${fwdProto}://${fwdHost}`;
+      publicUrl = `${publicProto}://${fwdHost}`;
     } else if (hostHeader && !isInternalHost) {
-      publicUrl = `${fwdProto}://${hostHeader}`;
+      publicUrl = `${publicProto}://${hostHeader}`;
     } else {
       // Ultimo fallback: hardcoded pro VPS atual (altere aqui se trocar de dominio)
       publicUrl = "https://dados-supabase.rt19gx.easypanel.host";
