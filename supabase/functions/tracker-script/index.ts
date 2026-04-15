@@ -65,12 +65,17 @@ serve(async (req) => {
       destinoUrl = `https://wa.me/${numero}`;
     }
 
+    // IMPORTANTE: SUPABASE_URL pode ser URL interna do Docker (ex: http://kong:8000)
+    // que nao eh acessivel pelo browser do usuario. Usamos o Host da requisicao
+    // que carregou o script (URL publica) pra montar o endpoint do track-click.
+    const publicUrl = `${url.protocol}//${url.host}`;
+
     // Gera o JavaScript dinâmico com a config da campanha embutida
     const script = generateTrackerScript({
       campanhaId: campanha.id,
       pixelId: fbPixelId,
       destinoUrl,
-      trackUrl: `${supabaseUrl}/functions/v1/track-click`,
+      trackUrl: `${publicUrl}/functions/v1/track-click`,
       apikey: supabaseAnonKey,
     });
 
