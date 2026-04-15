@@ -65,10 +65,37 @@ serve(async (req) => {
       destinoUrl = `https://wa.me/${numero}`;
     }
 
-    // IMPORTANTE: SUPABASE_URL pode ser URL interna do Docker (ex: http://kong:8000)
-    // que nao eh acessivel pelo browser do usuario. Usamos o Host da requisicao
-    // que carregou o script (URL publica) pra montar o endpoint do track-click.
-    const publicUrl = `${url.protocol}//${url.host}`;
+    // IMPORTANTE: SUPABASE_URL pode ser URL interna do Docker (ex: http://kong:8000 ou
+    // http://functions:9000) que nao eh acessivel pelo browser do usuario.
+    // Tentamos descobrir a URL publica em varios lugares:
+    // 1. Env var PUBLIC_SUPABASE_URL (mais confiavel se setada)
+    // 2. Header x-forwarded-host (setado por reverse proxies como Traefik)
+    // 3. Header host (se nao for hostname interno do Docker)
+    // 4. Fallback: url.host do request (ultima opcao)
+    const envPublicUrl = Deno.env.get("PUBLIC_SUPABASE_URL");
+    const fwdHost = req.headers.get("x-forwarded-host");
+    const fwdProto = req.headers.get("x-forwarded-proto") || "https";
+    const hostHeader = req.headers.get("host") || "";
+    const isInternalHost = /^(kong|functions|localhost|127\.|0\.0\.0\.0)/i.test(hostHeader);
+
+    let publicUrl: string;
+    if (envPublicUrl) {
+      publicUrl = envPublicUrl.replace(/\/$/, "");
+    } else if (fwdHost) {
+      publicUrl = `${fwdProto}://${fwdHost}`;
+    } else if (hostHeader && !isInternalHost) {
+      publicUrl = `${fwdProto}://${hostHeader}`;
+    } else {
+      // Ultimo fallback: hardcoded pro VPS atual (altere aqui se trocar de dominio)
+      publicUrl = "https://dados-supabase.rt19gx.easypanel.host";
+    }
+
+    console.log("[tracker-script] URL publica detectada:", publicUrl, {
+      envPublicUrl: !!envPublicUrl,
+      fwdHost,
+      hostHeader,
+      isInternalHost,
+    });
 
     // Gera o JavaScript dinâmico com a config da campanha embutida
     const script = generateTrackerScript({
