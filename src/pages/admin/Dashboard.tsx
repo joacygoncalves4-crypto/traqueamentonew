@@ -45,11 +45,20 @@ interface CampanhaRealtime {
   ultimas24h_ads: number;
 }
 
+interface CampanhaLeads {
+  nome: string;
+  total_unicos: number;
+  via_anuncio: number;
+  direto: number;
+  pct_anuncio: number;
+}
+
 const Dashboard = () => {
   const [eventos, setEventos] = useState<Evento[]>([]);
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
   const [atribuicao, setAtribuicao] = useState<AtribuicaoRow[]>([]);
   const [campanhaRealtime, setCampanhaRealtime] = useState<CampanhaRealtime[]>([]);
+  const [campanhaLeads, setCampanhaLeads] = useState<CampanhaLeads[]>([]);
   const [loading, setLoading] = useState(true);
   const [realtimeLoading, setRealtimeLoading] = useState(false);
   const [filtroCapanha, setFiltroCampanha] = useState<string>("all");
@@ -271,7 +280,60 @@ const Dashboard = () => {
     }
 
     await fetchAtribuicao(start, end);
+    await fetchCampanhaLeads(start, end);
     setLoading(false);
+  };
+
+  const fetchCampanhaLeads = async (start: string, end: string) => {
+    try {
+      // Busca todos eventos do periodo (sem filtro de campanha pra mostrar todas)
+      const { data: evts } = await supabase
+        .from("eventos")
+        .select("campanha_id, telefone_masked, fbc, evento_enviado")
+        .gte("created_at", start)
+        .lte("created_at", end)
+        .eq("evento_enviado", true);
+
+      if (!evts || evts.length === 0) {
+        setCampanhaLeads([]);
+        return;
+      }
+
+      // Busca nomes das campanhas
+      const { data: camps } = await supabase
+        .from("campanhas")
+        .select("id, nome");
+
+      const campMap = new Map((camps || []).map((c) => [c.id, c.nome]));
+
+      // Agrupa por campanha, deduplica por telefone
+      const map = new Map<string, { nome: string; total: Set<string>; ads: Set<string> }>();
+
+      for (const evt of evts) {
+        if (!evt.campanha_id) continue;
+        const nome = campMap.get(evt.campanha_id) || evt.campanha_id;
+        if (!map.has(evt.campanha_id)) {
+          map.set(evt.campanha_id, { nome, total: new Set(), ads: new Set() });
+        }
+        const row = map.get(evt.campanha_id)!;
+        row.total.add(evt.telefone_masked);
+        if (evt.fbc) row.ads.add(evt.telefone_masked);
+      }
+
+      const result: CampanhaLeads[] = Array.from(map.values())
+        .map((row) => ({
+          nome: row.nome,
+          total_unicos: row.total.size,
+          via_anuncio: row.ads.size,
+          direto: row.total.size - row.ads.size,
+          pct_anuncio: row.total.size > 0 ? Math.round((row.ads.size / row.total.size) * 100) : 0,
+        }))
+        .sort((a, b) => b.via_anuncio - a.via_anuncio);
+
+      setCampanhaLeads(result);
+    } catch (err) {
+      console.error("Erro ao buscar leads por campanha:", err);
+    }
   };
 
   const fetchAtribuicao = async (start: string, end: string) => {
@@ -549,6 +611,63 @@ const Dashboard = () => {
               </Table>
               <p className="text-xs text-muted-foreground mt-3">
                 <strong>Anuncio</strong> = entrou via anuncio (tem fbc/fbclid) | <strong>Direto</strong> = entrou direto no grupo (sem passar pelo anuncio)
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Leads por Campanha — via Anuncio vs Direto */}
+        {campanhaLeads.length > 0 && (
+          <Card className="border-blue-200">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-blue-600" />
+                <div>
+                  <CardTitle>Leads por Campanha — Via Anuncio ({getPeriodoLabel()})</CardTitle>
+                  <CardDescription>
+                    Quantas pessoas entraram pelo anuncio vs direto — deduplicado por telefone unico
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Campanha</TableHead>
+                    <TableHead className="text-center">Via Anuncio 🎯</TableHead>
+                    <TableHead className="text-center">Direto</TableHead>
+                    <TableHead className="text-center">Total</TableHead>
+                    <TableHead className="text-center">% Anuncio</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {campanhaLeads.map((row) => (
+                    <TableRow key={row.nome}>
+                      <TableCell className="font-medium">{row.nome}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="default" className="bg-green-600 text-base px-3">
+                          {row.via_anuncio}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="secondary">{row.direto}</Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="text-base px-3">{row.total_unicos}</Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <span className={`font-bold text-sm ${row.pct_anuncio >= 70 ? "text-green-600" : row.pct_anuncio >= 40 ? "text-yellow-600" : "text-red-500"}`}>
+                          {row.pct_anuncio}%
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <p className="text-xs text-muted-foreground mt-3">
+                <strong>Via Anuncio</strong> = entrou com fbc/fbclid (veio do anuncio) |{" "}
+                <strong>Direto</strong> = entrou sem atribuicao (link organico ou direto)
               </p>
             </CardContent>
           </Card>
