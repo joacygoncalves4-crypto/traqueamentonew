@@ -8,7 +8,9 @@ const corsHeaders = {
 };
 
 async function sha256(message: string): Promise<string> {
-  const msgBuffer = new TextEncoder().encode(message);
+  // Normaliza igual ao WhatsApp: trim + lowercase + remove espacos
+  const normalized = message.trim().toLowerCase().replace(/\s/g, "");
+  const msgBuffer = new TextEncoder().encode(normalized);
   const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -23,9 +25,6 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
-
-    const url = new URL(req.url);
-    const botId = url.searchParams.get("bot_id");
 
     const payload = await req.json();
     console.log("Telegram webhook recebido:", JSON.stringify(payload, null, 2));
@@ -52,7 +51,7 @@ serve(async (req) => {
     const userId = String(chatMember.new_chat_member?.user?.id || "");
     const userName = chatMember.new_chat_member?.user?.first_name || "Desconhecido";
 
-    console.log("Entrada detectada:", { chatId, userId, userName });
+    console.log("Entrada Telegram detectada:", { chatId, userId, userName });
 
     if (!chatId || !userId) {
       return new Response(JSON.stringify({ error: "Dados insuficientes" }), {
@@ -106,56 +105,83 @@ serve(async (req) => {
       }
     }
 
-    // Hash do user_id do Telegram (como identificador)
+    // Hash do user_id do Telegram como identificador unico
     const userIdHash = await sha256(userId);
     const userIdMasked = `tg_${userId.slice(0, 4)}****`;
 
-    let eventoEnviado = false;
-    let pixelResponse = null;
+    // --- FIFO MATCH com janela de 5 minutos (igual ao WhatsApp) ---
+    // Expirar cliques antigos desta campanha
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    await supabase
+      .from("cliques")
+      .update({ status: "expired" })
+      .eq("campanha_id", campanha.id)
+      .eq("status", "pending")
+      .lt("created_at", fiveMinAgo);
 
-    // Busca dados de atribuicao do clique mais recente desta campanha
-    let attr: any = {};
-    try {
-      const { data: clickData } = await supabase
-        .from("cliques")
-        .select("fbclid, fbc, fbp, utm_source, utm_medium, utm_campaign, utm_content, user_agent, landing_url")
-        .eq("campanha_id", campanha.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    // Busca o clique pendente mais antigo (FIFO) na janela de 5 min
+    const { data: clickData } = await supabase
+      .from("cliques")
+      .select("id, click_id, fbclid, fbc, fbp, utm_source, utm_medium, utm_campaign, utm_content, user_agent, landing_url, ip_address")
+      .eq("campanha_id", campanha.id)
+      .eq("status", "pending")
+      .gte("created_at", fiveMinAgo)
+      .order("created_at", { ascending: true }) // FIFO: mais antigo primeiro
+      .limit(1)
+      .maybeSingle();
 
-      if (clickData) {
-        attr = clickData;
-        console.log("Dados de atribuicao encontrados:", { fbc: attr.fbc, fbp: attr.fbp });
-      }
-    } catch (attrError) {
-      console.error("Erro ao buscar atribuicao:", attrError);
+    if (!clickData) {
+      console.log(`Sem clique pendente válido para campanha ${campanha.nome} — salvando sem atribuição`);
+      // Salva no banco como log interno sem enviar ao Facebook
+      await supabase.from("eventos").insert({
+        campanha_id: campanha.id,
+        telefone_hash: userIdHash,
+        telefone_masked: userIdMasked,
+        evento_enviado: false,
+        pixel_response: "match_falhou_sem_clique_pendente",
+        pixel_id: pixelDbId,
+        fonte: "telegram",
+      });
+
+      return new Response(
+        JSON.stringify({ ok: true, campaign: campanha.nome, user: userIdMasked, pixel_sent: false, reason: "sem_clique_pendente" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // Enviar evento para Facebook CAPI
+    console.log("Clique FIFO encontrado:", { click_id: clickData.click_id, fbc: clickData.fbc });
+
+    let eventoEnviado = false;
+    let pixelResponse = null;
+    let insertedEventoId = null;
+
+    // Enviar evento para Facebook CAPI (Graph API v21.0)
     if (pixelId && accessToken) {
       try {
         const eventTime = Math.floor(Date.now() / 1000);
-        const eventId = `tg_${userId}_${eventTime}`;
+        // Usa click_id como event_id para deduplicação estável
+        const eventId = clickData.click_id || `tg_${userId}_${eventTime}`;
         const countryHash = await sha256("br");
 
-        // Monta user_data com todos os campos disponiveis
+        // Monta user_data com todos os campos disponíveis
         const user_data: any = {
           external_id: [userIdHash],
           country: [countryHash],
         };
-        if (attr.fbc) user_data.fbc = attr.fbc;
-        if (attr.fbp) user_data.fbp = attr.fbp;
-        if (attr.user_agent) user_data.client_user_agent = attr.user_agent;
+        if (clickData.fbc) user_data.fbc = clickData.fbc;
+        if (clickData.fbp) user_data.fbp = clickData.fbp;
+        if (clickData.user_agent) user_data.client_user_agent = clickData.user_agent;
+        if (clickData.ip_address) user_data.client_ip_address = clickData.ip_address;
 
         const eventData: any = {
-          event_name: "GrupoEntrada",
+          event_name: "Lead",  // Standard event (não custom) para otimização
           event_time: eventTime,
           event_id: eventId,
           action_source: "website",
           user_data,
           custom_data: {
-            source: "telegram",
+            lead_type: "grupo_telegram",        // Filtro da conversão personalizada
+            lead_source: "grupo_direto",
             campaign_id: campanha.grupo_id,
             campaign_name: campanha.nome,
             chat_id: chatId,
@@ -163,19 +189,21 @@ serve(async (req) => {
           },
         };
 
-        if (attr.landing_url) eventData.event_source_url = attr.landing_url;
-        if (attr.utm_campaign) eventData.custom_data.utm_campaign = attr.utm_campaign;
-        if (attr.utm_source) eventData.custom_data.utm_source = attr.utm_source;
+        if (clickData.landing_url) eventData.event_source_url = clickData.landing_url;
+        if (clickData.utm_campaign) eventData.custom_data.utm_campaign = clickData.utm_campaign;
+        if (clickData.utm_source) eventData.custom_data.utm_source = clickData.utm_source;
+        if (clickData.utm_medium) eventData.custom_data.utm_medium = clickData.utm_medium;
+        if (clickData.utm_content) eventData.custom_data.utm_content = clickData.utm_content;
 
         const facebookPayload = {
           data: [eventData],
           ...(testEventCode && { test_event_code: testEventCode }),
         };
 
-        console.log("Enviando Telegram para Facebook com atribuicao:", JSON.stringify(facebookPayload, null, 2));
+        console.log("Enviando Telegram para Facebook CAPI v21.0:", JSON.stringify(facebookPayload, null, 2));
 
         const fbResponse = await fetch(
-          `https://graph.facebook.com/v18.0/${pixelId}/events?access_token=${accessToken}`,
+          `https://graph.facebook.com/v21.0/${pixelId}/events?access_token=${accessToken}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -184,7 +212,7 @@ serve(async (req) => {
         );
 
         const fbData = await fbResponse.json();
-        console.log("Resposta do Facebook:", JSON.stringify(fbData, null, 2));
+        console.log("Resposta Facebook:", JSON.stringify(fbData, null, 2));
 
         if (fbResponse.ok && fbData.events_received) {
           eventoEnviado = true;
@@ -196,26 +224,45 @@ serve(async (req) => {
       }
     }
 
-    // Salvar evento no banco com dados de atribuicao
-    const { error: insertError } = await supabase.from("eventos").insert({
-      campanha_id: campanha.id,
-      telefone_hash: userIdHash,
-      telefone_masked: userIdMasked,
-      evento_enviado: eventoEnviado,
-      pixel_response: pixelResponse,
-      pixel_id: pixelDbId,
-      fonte: "telegram",
-      fbclid: attr.fbclid || null,
-      fbc: attr.fbc || null,
-      fbp: attr.fbp || null,
-      utm_campaign: attr.utm_campaign || null,
-      user_agent: attr.user_agent || null,
-    });
+    // Salvar evento no banco
+    const { data: insertedEvento, error: insertError } = await supabase
+      .from("eventos")
+      .insert({
+        campanha_id: campanha.id,
+        telefone_hash: userIdHash,
+        telefone_masked: userIdMasked,
+        evento_enviado: eventoEnviado,
+        pixel_response: pixelResponse,
+        pixel_id: pixelDbId,
+        fonte: "telegram",
+        fbclid: clickData.fbclid || null,
+        fbc: clickData.fbc || null,
+        fbp: clickData.fbp || null,
+        utm_campaign: clickData.utm_campaign || null,
+        user_agent: clickData.user_agent || null,
+      })
+      .select("id")
+      .single();
 
     if (insertError) {
       console.error("Erro ao salvar evento:", insertError);
     } else {
-      console.log("Evento Telegram salvo com sucesso!");
+      insertedEventoId = insertedEvento?.id;
+      console.log("Evento Telegram salvo:", insertedEventoId);
+    }
+
+    // Marcar clique como matched (FIFO)
+    if (insertedEventoId) {
+      await supabase
+        .from("cliques")
+        .update({
+          status: "matched",
+          matched_evento_id: insertedEventoId,
+          matched_at: new Date().toISOString(),
+        })
+        .eq("id", clickData.id);
+
+      console.log(`Clique ${clickData.click_id} marcado como matched`);
     }
 
     return new Response(
