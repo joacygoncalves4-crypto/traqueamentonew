@@ -146,7 +146,7 @@ const Campanhas = () => {
     }
   };
 
-  const fetchGrupos = async (instanciaId: string) => {
+  const fetchGrupos = async (instanciaId: string): Promise<Grupo[]> => {
     const { data, error } = await supabase
       .from("evolution_grupos")
       .select("id, group_jid, group_name, instancia_id")
@@ -155,8 +155,10 @@ const Campanhas = () => {
 
     if (error) {
       console.error("Erro ao buscar grupos:", error);
+      return [];
     } else {
       setGrupos(data || []);
+      return data || [];
     }
   };
 
@@ -254,12 +256,17 @@ const Campanhas = () => {
 
   const openEditDialog = async (campanha: Campanha) => {
     setEditingCampanha(campanha);
-    
-    // Se a campanha tem instancia_id, buscar os grupos dessa instância
+
+    // Busca os grupos da instância e já pré-seleciona o grupo correto pelo JID
+    let grupoSelecionadoId = "";
     if (campanha.instancia_id) {
-      await fetchGrupos(campanha.instancia_id);
+      const gruposData = await fetchGrupos(campanha.instancia_id);
+      if (campanha.whatsapp_group_jid) {
+        const match = gruposData.find(g => g.group_jid === campanha.whatsapp_group_jid);
+        if (match) grupoSelecionadoId = match.id;
+      }
     }
-    
+
     setFormData({
       nome: campanha.nome,
       descricao: campanha.descricao || "",
@@ -267,7 +274,7 @@ const Campanhas = () => {
       grupo_id: campanha.grupo_id,
       whatsapp_group_jid: campanha.whatsapp_group_jid || "",
       instancia_id: campanha.instancia_id || "",
-      grupo_selecionado_id: "",
+      grupo_selecionado_id: grupoSelecionadoId,
       pixel_id: campanha.pixel_id || "",
       telegram_chat_id: campanha.telegram_chat_id || "",
       telegram_bot_id: campanha.telegram_bot_id || "",
@@ -542,11 +549,21 @@ const Campanhas = () => {
                               Nenhum grupo sincronizado
                             </SelectItem>
                           ) : (
-                            grupos.map((grupo) => (
-                              <SelectItem key={grupo.id} value={grupo.id}>
-                                {grupo.group_name}
-                              </SelectItem>
-                            ))
+                            grupos.map((grupo) => {
+                              const jidSuffix = grupo.group_jid
+                                ? "..." + grupo.group_jid.replace("@g.us", "").slice(-6)
+                                : "";
+                              return (
+                                <SelectItem key={grupo.id} value={grupo.id}>
+                                  {grupo.group_name}
+                                  {jidSuffix && (
+                                    <span className="ml-2 text-xs text-muted-foreground font-mono">
+                                      {jidSuffix}
+                                    </span>
+                                  )}
+                                </SelectItem>
+                              );
+                            })
                           )}
                         </SelectContent>
                       </Select>
@@ -873,11 +890,21 @@ const Campanhas = () => {
                         <SelectValue placeholder="Selecione um grupo" />
                       </SelectTrigger>
                       <SelectContent>
-                        {grupos.map((grupo) => (
-                          <SelectItem key={grupo.id} value={grupo.id}>
-                            {grupo.group_name}
-                          </SelectItem>
-                        ))}
+                        {grupos.map((grupo) => {
+                          const jidSuffix = grupo.group_jid
+                            ? "..." + grupo.group_jid.replace("@g.us", "").slice(-6)
+                            : "";
+                          return (
+                            <SelectItem key={grupo.id} value={grupo.id}>
+                              {grupo.group_name}
+                              {jidSuffix && (
+                                <span className="ml-2 text-xs text-muted-foreground font-mono">
+                                  {jidSuffix}
+                                </span>
+                              )}
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                   </div>
